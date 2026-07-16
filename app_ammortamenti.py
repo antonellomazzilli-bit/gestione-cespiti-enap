@@ -40,9 +40,7 @@ files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
     for f in files:
-        try:
-            radice = ET.parse(f).getroot()
-            
+                   
             # --- ESTRAZIONE INTESTAZIONE ---
             try:
                 fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
