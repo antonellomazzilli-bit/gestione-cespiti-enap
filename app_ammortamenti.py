@@ -6,119 +6,46 @@ import html
 
 st.set_page_config(page_title="Gestione Ammortamenti En.A.P.", layout="wide")
 
+# --- PANNELLO LATERALE: IMPOSTAZIONI ALIQUOTE DINAMICHE ---
+with st.sidebar:
+    st.header("⚙️ Impostazioni Fiscali")
+    st.markdown("Modifica le aliquote standard applicate dall'algoritmo.")
+    # Permette di variare dinamicamente il 50% assegnato ai software
+    aliquota_software_dinamica = st.number_input("Aliquota Software/Licenze (%)", min_value=0.0, max_value=100.0, value=50.0, step=1.0)
+    aliquota_straordinaria = st.number_input("Aliquota Lavori Straordinari (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+
 # --- INIEZIONE CSS: IMPAGINAZIONE AVANZATA PER LA STAMPA ---
 st.markdown("""
     <style>
-        .titolo-fattura {
-            background-color: #f8fafc;
-            padding: 12px 15px;
-            border-left: 5px solid #2563eb;
-            border-radius: 6px 6px 0 0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        
-        .fattura-container {
-            background-color: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            margin-bottom: 30px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            page-break-inside: avoid !important; 
-        }
-        
-        table.custom-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-        
-        table.custom-table th, table.custom-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #e2e8f0;
-            text-align: right;
-            vertical-align: middle;
-        }
-        
-        table.custom-table td:first-child, table.custom-table th:first-child {
-            text-align: left; 
-            width: 30%;
-        }
-        
-        table.custom-table th {
-            background-color: #f1f5f9;
-            font-weight: bold;
-            color: #0f172a;
-        }
-        
+        .titolo-fattura { background-color: #f8fafc; padding: 12px 15px; border-left: 5px solid #2563eb; border-radius: 6px 6px 0 0; border-bottom: 1px solid #e2e8f0; }
+        .fattura-container { background-color: white; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 30px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); page-break-inside: avoid !important; }
+        table.custom-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table.custom-table th, table.custom-table td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; vertical-align: middle; }
+        table.custom-table td:first-child, table.custom-table th:first-child { text-align: left; width: 30%; }
+        table.custom-table th { background-color: #f1f5f9; font-weight: bold; color: #0f172a; }
         @media print {
-            header, footer, .stDeployButton, [data-testid="stFileUploader"], .no-print { 
-                display: none !important; 
-            }
-            
-            body, .stApp, .main, .block-container, div {
-                background-color: transparent !important;
-                background-image: none !important;
-                color: black !important;
-                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
-            }
-            
-            .block-container { 
-                padding: 0 !important;
-                max-width: 100% !important;
-            }
-            
-            table.custom-table th, table.custom-table td {
-                border: 1px solid #94a3b8 !important;
-            }
-            
-            table.custom-table th {
-                background-color: #cbd5e1 !important; 
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important;
-            }
-            
-            .titolo-fattura {
-                background-color: transparent !important;
-                border-left: none !important;
-                border-bottom: 2px solid #000 !important;
-                box-shadow: none !important;
-                padding: 0 0 8px 0 !important;
-            }
-            
-            .fattura-container {
-                border: none !important;
-                box-shadow: none !important;
-                margin-bottom: 40px !important;
-            }
-            
-            .print-header {
-                display: block !important;
-                text-align: center;
-                border-bottom: 3px solid #000;
-                padding-bottom: 10px;
-                margin-bottom: 20px;
-            }
+            header, footer, .stDeployButton, [data-testid="stFileUploader"], [data-testid="stSidebar"], .no-print { display: none !important; }
+            body, .stApp, .main, .block-container, div { background-color: transparent !important; color: black !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important; }
+            .block-container { padding: 0 !important; max-width: 100% !important; }
+            table.custom-table th, table.custom-table td { border: 1px solid #94a3b8 !important; }
+            table.custom-table th { background-color: #cbd5e1 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .fattura-container { border: none !important; box-shadow: none !important; margin-bottom: 40px !important; }
+            .print-header { display: block !important; text-align: center; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
             .print-header h2 { margin: 0; font-size: 24px; text-transform: uppercase; }
             .print-header p { margin: 5px 0 0 0; font-size: 14px; color: #555; }
         }
-        
         .print-header { display: none; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- FUNZIONI DI FORMATTAZIONE EUROPEA ---
-def formatta_euro(valore):
-    return f"{valore:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
+def formatta_euro(valore): return f"{valore:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 def formatta_decimale(valore):
-    val_formattato = f"{valore:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    if val_formattato.endswith(",00"): return val_formattato[:-3]
-    return val_formattato
-
-def formatta_anni(valore):
-    return str(valore).replace(".", ",")
+    v = f"{valore:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return v[:-3] if v.endswith(",00") else v
+def formatta_anni(valore): return str(valore).replace(".", ",")
 
 # 1. DATABASE CESPITI E FILTRI PAROLE CHIAVE
+cluster_straordinaria = ["straordinaria", "ristrutturazione", "ampliamento", "adeguamento", "innovazione", "miglioramento", "strutturale"]
 cluster_servizi_pesanti = ["pulizia", "canone", "abbonamento", "consulenza", "manutenzione", "noleggio", "energia", "assicurazione", "servizio", "lavori", "pitturazione", "cartongesso", "manodopera"]
 cluster_accessori = ["installazione", "trasporto", "spese", "spedizione"]
 cluster_software = ["software", "licenza", "windows", "antivirus", "gestionale", "office", "applicativo"]
@@ -129,19 +56,26 @@ cluster_laboratorio = ["forno", "piastra", "frigo", "abbattitore", "lavastovigli
 cluster_mobili = ["scrivania", "sedia", "seduta", "poltrona", "banco", "armadio", "tavolo", "cassettiera", "cattedra", "scaffal", "vetrina", "porta ", "protezioni"]
 cluster_sollevamento = ["sollevamento", "elevatore", "gru ", "muletto", "carrello elevatore", "paranco", "argano"]
 
-def classifica_voce(descrizione, prezzo_lordo):
+def classifica_voce(descrizione, prezzo_lordo, aliq_soft, aliq_straord):
     if not descrizione: return "Sconosciuto", 0.0, "Nessuna descrizione"
     desc_lower = descrizione.lower()
     
+    # 1. ECCEZIONE ASSOLUTA: Manutenzione Straordinaria (Batte tutti gli altri filtri)
+    motivo_straordinario = next((p for p in cluster_straordinaria if p in desc_lower), None)
+    if motivo_straordinario: 
+        return "Spese Incrementali / Manut. Straordinaria", aliq_straord, f"Intervento strutturale rilevato: '{motivo_straordinario}'"
+    
+    # 2. SCUDO SERVIZI ORDINARI
     motivo_pesante = next((p for p in cluster_servizi_pesanti if p in desc_lower), None)
-    if motivo_pesante: return "Spesa Corrente / Servizio non ammortizzabile", 0.0, f"Rilevato servizio di tipo: '{motivo_pesante}'"
+    if motivo_pesante: return "Spesa Corrente / Servizio non ammortizzabile", 0.0, f"Rilevato servizio ordinario: '{motivo_pesante}'"
     
     categoria = ""
     aliquota = 0.0
     
+    # 3. RICERCA BENI
     if any(parola in desc_lower for parola in cluster_sollevamento): categoria, aliquota = "AA2 - Impianti e mezzi di sollevamento (Sottosp. 4)", 7.5
     elif any(parola in desc_lower for parola in cluster_hardware): categoria, aliquota = "AA4 - Elaboratori elettronici e sistemi hardware (Sottosp. 41)", 33.33
-    elif any(parola in desc_lower for parola in cluster_software): categoria, aliquota = "AA1 - Diritti di utilizzazione delle opere dell'ingegno / Software (Sottosp. 42)", 50.0
+    elif any(parola in desc_lower for parola in cluster_software): categoria, aliquota = "AA1 - Diritti di utilizzazione delle opere dell'ingegno / Software (Sottosp. 42)", aliq_soft
     elif any(parola in desc_lower for parola in cluster_macchine_uff): categoria, aliquota = "AA8 - Macchine d'ufficio elettroniche (Sottosp. 13)", 20.0
     elif any(parola in desc_lower for parola in cluster_impianti): categoria, aliquota = "AA2 - Impianti generici di condizionamento, allarme e cablaggio (Sottosp. 44)", 16.66
     elif any(parola in desc_lower for parola in cluster_mobili): categoria, aliquota = "AA7 - Mobili e arredi ordinari d'ufficio (Sottosp. 43)", 12.50
@@ -190,8 +124,7 @@ if file_caricati:
             for elemento in radice.iter():
                 if 'CedentePrestatore' in elemento.tag:
                     for figlio in elemento.iter():
-                        if 'Denominazione' in figlio.tag and fornitore == "Non specificato":
-                            fornitore = figlio.text
+                        if 'Denominazione' in figlio.tag and fornitore == "Non specificato": fornitore = figlio.text
                             
                 elif 'DatiGeneraliDocumento' in elemento.tag:
                     for figlio in elemento.iter():
@@ -234,18 +167,16 @@ if file_caricati:
                             try: aliquota_iva_riga = float(figlio.text)
                             except ValueError: pass
                                 
-                    if prezzo_totale > 0:
-                        prezzo_netto = prezzo_totale
-                    else:
-                        prezzo_netto = prezzo_unitario * quantita
+                    if prezzo_totale > 0: prezzo_netto = prezzo_totale
+                    else: prezzo_netto = prezzo_unitario * quantita
                     
                     if descrizione and prezzo_netto > 0:
                         iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
                         prezzo_lordo = prezzo_netto + iva_calcolata
                         
-                        categoria, aliquota, motivazione = classifica_voce(descrizione, prezzo_lordo)
+                        # Passaggio delle aliquote dinamiche dalla sidebar
+                        categoria, aliquota, motivazione = classifica_voce(descrizione, prezzo_lordo, aliquota_software_dinamica, aliquota_straordinaria)
                         
-                        # --- CORREZIONE: RE-INSERITO IL CALCOLO DEGLI ANNI ---
                         anni = 0.0 if aliquota == 0 else (1.0 if aliquota == 100 else round(100 / aliquota, 1))
                         
                         if aliquota == 0:
@@ -256,14 +187,9 @@ if file_caricati:
                             nota_azione = f"✔️ DA ISCRIVERE<br><span style='font-size:10px; font-weight:normal; color:#475569;'>{motivazione}</span>"
                         
                         righe_estratte.append({
-                            "Descrizione": descrizione,
-                            "Valore_Netto": prezzo_netto,
-                            "IVA_num": iva_calcolata,
-                            "Valore_Lordo": prezzo_lordo,
-                            "Esito Fiscale": categoria,
-                            "Aliquota_num": aliquota,
-                            "Anni_num": anni,
-                            "Nota_Azione": nota_azione
+                            "Descrizione": descrizione, "Valore_Netto": prezzo_netto, "IVA_num": iva_calcolata,
+                            "Valore_Lordo": prezzo_lordo, "Esito Fiscale": categoria, "Aliquota_num": aliquota,
+                            "Anni_num": anni, "Nota_Azione": nota_azione
                         })
             
             if importo_totale_doc == 0.0 and (imponibile_riepilogo > 0 or importo_iva_totale > 0):
