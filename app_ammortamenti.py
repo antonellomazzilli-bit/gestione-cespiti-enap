@@ -15,25 +15,25 @@ def fmt(v):
     """Formatta i numeri nel formato italiano: 1.234,56"""
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
-    """Analizza la descrizione e determina la classificazione fiscale"""
+def classifica_voce(desc, prezzo_lordo, aliq_soft, aliq_straord):
+    """Analizza la descrizione e determina la classificazione fiscale sul valore LORDO"""
     desc_l = desc.lower()
     
     # 1. PRIORITÀ MASSIMA: Beni fisici (Prevalgono su qualsiasi filtro lavori/servizi)
     if any(p in desc_l for p in ["porta", "copricassonetto", "infisso", "sedia", "scrivania", "pc", "computer"]):
         aliq = 12.5
-        return "AA7 - Arredi/Beni", aliq, prezzo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
+        return "AA7 - Arredi/Beni", aliq, prezzo_lordo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
     
     # 2. Straordinaria
     if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento"]):
-        return "Spese Incrementali", aliq_straord, prezzo * (aliq_straord/100), "Intervento strutturale rilevato"
+        return "Spese Incrementali", aliq_straord, prezzo_lordo * (aliq_straord/100), "Intervento strutturale rilevato"
         
     # 3. Servizi ordinari (Scudo)
     if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione"]):
         return "Spesa Corrente", 0.0, 0.0, "Servizio ordinario rilevato"
         
     # 4. Default
-    return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
+    return "AA3 - Generica", 15.0, prezzo_lordo * 0.15, "Ammortamento ordinario"
 
 st.title("Classificatore Fatture XML")
 files = st.file_uploader("Carica XML", accept_multiple_files=True)
@@ -67,14 +67,29 @@ if files:
             # --- ANALISI RIGHE ---
             dati = []
             for linea in radice.iter('DettaglioLinee'):
-                desc = linea.findtext('Descrizione')
-                prezzo = float(linea.findtext('PrezzoTotale') or 0)
+                desc = linea.findtext('Descrizione') or ""
                 
-                cat, aliq, quota, motivo = classifica_voce(desc, prezzo, aliquota_soft, aliquota_straord)
+                # Estrazione Imponibile
+                prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
+                
+                # Estrazione Aliquota IVA per la riga corrente
+                try:
+                    aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
+                except:
+                    aliquota_iva_riga = 0.0
+                
+                # Calcolo del Lordo
+                iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
+                prezzo_lordo = prezzo_netto + iva_calcolata
+                
+                # Classificazione basata sul Prezzo Lordo (IVA indetraibile = Costo)
+                cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
                 dati.append({
                     "Descrizione": desc, 
-                    "Valore (€)": fmt(prezzo), 
+                    "Imponibile (€)": fmt(prezzo_netto),
+                    "IVA (€)": fmt(iva_calcolata),
+                    "Imponibile + IVA (€)": fmt(prezzo_lordo),
                     "Aliquota (%)": aliq, 
                     "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
@@ -86,4 +101,4 @@ if files:
                 st.warning("Nessuna linea trovata nel file.")
                 
         except Exception as e:
-            st.error(f"Errore nella lettura del file {f.name}: {e}")
+            st.error(f"Errore nella lettura del file: {e}")
