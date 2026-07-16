@@ -43,22 +43,30 @@ if files:
         try:
             radice = ET.parse(f).getroot()
             
-            # --- ESTRAZIONE INTESTAZIONE ---
-            try:
-                fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
-            except:
-                fornitore = "Non specificato"
+            # --- ESTRAZIONE INTESTAZIONE E DATI FATTURA ---
+            fornitore = radice.findtext('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione') or "Non specificato"
+            numero_fattura = radice.findtext('.//DatiGeneraliDocumento/Numero') or "N/D"
+            
+            # Estrazione e formattazione Data (da YYYY-MM-DD a DD/MM/YYYY)
+            data_raw = radice.findtext('.//DatiGeneraliDocumento/Data') or "N/D"
+            if data_raw != "N/D" and len(data_raw) >= 10:
+                data_fattura = f"{data_raw[8:10]}/{data_raw[5:7]}/{data_raw[0:4]}"
+            else:
+                data_fattura = data_raw
                 
             try:
-                tot_fattura = float(radice.find('.//DatiGeneraliDocumento/ImportoTotaleDocumento').text)
+                tot_fattura = float(radice.findtext('.//DatiGeneraliDocumento/ImportoTotaleDocumento') or 0.0)
             except:
                 tot_fattura = 0.0
                 
-            tot_iva = sum([float(i.find('Imposta').text) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
+            tot_iva = sum([float(i.findtext('Imposta') or 0.0) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
             
             # --- VISUALIZZAZIONE INTESTAZIONE PERSONALIZZATA ---
-            st.subheader(f"Fornitore: {fornitore}")
+            st.subheader(f"📄 FATTURA N. {numero_fattura} del {data_fattura}")
             st.markdown(f"""
+                <div style="font-size: 18px; color: #334155; margin-bottom: 5px;">
+                    <b>Fornitore:</b> {fornitore}
+                </div>
                 <div style="font-size: 24px; font-weight: bold; color: #1e3a8a; margin-bottom: 20px;">
                     Totale Fattura: € {fmt(tot_fattura)} &nbsp;&nbsp;|&nbsp;&nbsp; Totale IVA: € {fmt(tot_iva)}
                 </div>
@@ -69,20 +77,15 @@ if files:
             for linea in radice.iter('DettaglioLinee'):
                 desc = linea.findtext('Descrizione') or ""
                 
-                # Estrazione Imponibile
                 prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
-                
-                # Estrazione Aliquota IVA per la riga corrente
                 try:
                     aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
                 except:
                     aliquota_iva_riga = 0.0
                 
-                # Calcolo del Lordo
                 iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
                 prezzo_lordo = prezzo_netto + iva_calcolata
                 
-                # Classificazione basata sul Prezzo Lordo (IVA indetraibile = Costo)
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
                 dati.append({
