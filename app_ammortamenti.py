@@ -14,7 +14,7 @@ with st.sidebar:
     aliquota_straordinaria = st.number_input("Aliquota Lavori Straordinari (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
 
 # --- INIEZIONE CSS: IMPAGINAZIONE AVANZATA PER LA STAMPA ---
-st.markdown('''
+st.markdown("""
     <style>
         .titolo-fattura { background-color: #f8fafc; padding: 12px 15px; border-left: 5px solid #2563eb; border-radius: 6px 6px 0 0; border-bottom: 1px solid #e2e8f0; }
         .fattura-container { background-color: white; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 30px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); page-break-inside: avoid !important; }
@@ -35,7 +35,7 @@ st.markdown('''
         }
         .print-header { display: none; }
     </style>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 def formatta_euro(valore): return f"{valore:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 def formatta_decimale(valore):
@@ -90,12 +90,12 @@ def classifica_voce(descrizione, prezzo_lordo, aliq_soft, aliq_straord):
 st.title("Classificatore Fatture XML (Database 2025)")
 
 data_odierna = datetime.now().strftime("%d/%m/%Y")
-st.markdown(f'''
+st.markdown(f"""
     <div class="print-header">
         <h2>En.A.P. Puglia</h2>
         <p>Report Analitico Classificazione Cespiti | Generato il: {data_odierna}</p>
     </div>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 st.markdown('<p class="no-print" style="font-size: 16px;">Carica gli <b>XML</b> per generare il report impaginato.</p>', unsafe_allow_html=True)
 file_caricati = st.file_uploader("Scegli i file XML", type=["xml", "p7m"], accept_multiple_files=True)
@@ -202,7 +202,7 @@ if file_caricati:
                 totale_cespiti_globale += cespiti_puri
                 totale_non_ammesso_globale += totale_non_ammesso_riga
                 
-                html_fattura = f'''
+                html_fattura = f"""
 <div class="fattura-container">
     <div class="titolo-fattura">
         <h4 style="margin:0; color:#1e3a8a;">📄 FATTURA N. {html.escape(str(numero_fattura))} del {html.escape(str(data_fattura))}</h4>
@@ -226,13 +226,13 @@ if file_caricati:
             </tr>
         </thead>
         <tbody>
-'''
+"""
                 
                 for riga in righe_estratte:
                     stile_cella = "color: #b91c1c; font-weight: 500;" if riga['Aliquota_num'] == 0 else "color: #1e293b;"
                     colore_nota = "#b91c1c" if riga['Aliquota_num'] == 0 else "#047857"
                     
-                    html_fattura += f'''
+                    html_fattura += f"""
             <tr>
                 <td style="{stile_cella}">{riga['Descrizione']}</td>
                 <td style="{stile_cella}">{formatta_euro(riga['Valore_Netto'])}</td>
@@ -243,9 +243,9 @@ if file_caricati:
                 <td style="{stile_cella}">{formatta_anni(riga['Anni_num'])}</td>
                 <td style="color: {colore_nota}; font-weight: bold; line-height: 1.3;">{riga['Nota_Azione']}</td>
             </tr>
-'''
+"""
                     
-                html_fattura += f'''
+                html_fattura += f"""
             <tr style="background-color: #f1f5f9; font-weight: bold; color: #0f172a; border-top: 2px solid #94a3b8;">
                 <td style="text-align: right; color: #0f172a;">TOTALE RIGHE</td>
                 <td style="color: #0f172a;">{formatta_euro(totale_netto_spese)}</td>
@@ -264,7 +264,7 @@ if file_caricati:
         <span style="color: #b91c1c; font-size: 14px;"><b>Spese Correnti / Non Ammesse:</b> € {formatta_euro(totale_non_ammesso_riga)}</span>
     </div>
 </div>
-'''
+"""
                 st.html(html_fattura)
                 
             else:
@@ -275,7 +275,7 @@ if file_caricati:
             
     if totale_lordo_globale > 0:
         st.markdown('<hr style="border: 2px solid #000; margin-top: 40px;" class="no-print">', unsafe_allow_html=True)
-        st.markdown(f'''
+        st.markdown(f"""
             <div style="page-break-inside: avoid; border: 2px solid #1e293b; padding: 20px; border-radius: 8px; margin-top: 20px;">
                 <h3 style="margin-top:0; text-align:center;">📊 RIEPILOGO GLOBALE REPORT (VALORI LORDI)</h3>
                 <div style="display: flex; justify-content: space-around; margin-top: 15px;">
@@ -301,4 +301,4 @@ if file_caricati:
                     Per impaginare e stampare il documento ufficiale, premi <b>CTRL + P</b> sulla tastiera.
                 </p>
             </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
