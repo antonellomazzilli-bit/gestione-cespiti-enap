@@ -41,7 +41,7 @@ st.markdown("""
         
         table.custom-table td:first-child, table.custom-table th:first-child {
             text-align: left; 
-            width: 35%;
+            width: 30%;
         }
         
         table.custom-table th {
@@ -129,7 +129,7 @@ cluster_laboratorio = ["forno", "piastra", "frigo", "abbattitore", "lavastovigli
 cluster_mobili = ["scrivania", "sedia", "seduta", "poltrona", "banco", "armadio", "tavolo", "cassettiera", "cattedra", "scaffal", "vetrina", "porta ", "protezioni"]
 cluster_sollevamento = ["sollevamento", "elevatore", "gru ", "muletto", "carrello elevatore", "paranco", "argano"]
 
-def classifica_voce(descrizione, prezzo):
+def classifica_voce(descrizione, prezzo_lordo):
     if not descrizione: return "Sconosciuto", 0.0
     desc_lower = descrizione.lower()
     
@@ -145,7 +145,8 @@ def classifica_voce(descrizione, prezzo):
     elif any(parola in desc_lower for parola in cluster_accessori): return "Spesa Corrente / Servizio accessorio", 0.0
     else: categoria, aliquota = "AA3 - Attrezzatura Generica (Da Verificare)", 15.0
     
-    if prezzo <= 516.46 and aliquota > 0:
+    # Lo sbarramento viene ora calcolato sul COSTO LORDO (inclusa IVA indetraibile)
+    if prezzo_lordo <= 516.46 and aliquota > 0:
         return "AA9 - Beni ammortizzabili meno di 1 anno (Sottosp. 35)", 100.0
         
     return categoria, aliquota
@@ -165,7 +166,7 @@ st.markdown('<p class="no-print" style="font-size: 16px;">Carica gli <b>XML</b> 
 file_caricati = st.file_uploader("Scegli i file XML", type=["xml", "p7m"], accept_multiple_files=True)
 
 if file_caricati:
-    totale_imponibile_globale = 0.0
+    totale_lordo_globale = 0.0
     totale_cespiti_globale = 0.0
     totale_non_ammesso_globale = 0.0
     
@@ -228,25 +229,29 @@ if file_caricati:
                             except ValueError: pass
                                 
                     if prezzo_totale > 0:
-                        prezzo_finale = prezzo_totale
+                        prezzo_netto = prezzo_totale
                     else:
-                        prezzo_finale = prezzo_unitario * quantita
+                        prezzo_netto = prezzo_unitario * quantita
                     
-                    if descrizione and prezzo_finale > 0:
-                        iva_calcolata = prezzo_finale * (aliquota_iva_riga / 100.0)
-                        categoria, aliquota = classifica_voce(descrizione, prezzo_finale)
+                    if descrizione and prezzo_netto > 0:
+                        iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
+                        
+                        # --- CALCOLO DEL LORDO (IL VERO COSTO DEL BENE) ---
+                        prezzo_lordo = prezzo_netto + iva_calcolata
+                        
+                        categoria, aliquota = classifica_voce(descrizione, prezzo_lordo)
                         anni = 0.0 if aliquota == 0 else (1.0 if aliquota == 100 else round(100 / aliquota, 1))
                         
-                        # --- GENERAZIONE DELLA NOTA DI SCARTO ---
                         if aliquota == 0:
                             nota_azione = "❌ SCARTATO (Spesa Corrente)"
                         else:
-                            nota_azione = "✔️ DA ISCRIVERE"
+                            nota_azione = "✔️ DA ISCRIVERE (Lordo)"
                         
                         righe_estratte.append({
                             "Descrizione": descrizione,
-                            "Valore_num": prezzo_finale,
+                            "Valore_Netto": prezzo_netto,
                             "IVA_num": iva_calcolata,
+                            "Valore_Lordo": prezzo_lordo,
                             "Esito Fiscale": categoria,
                             "Aliquota_num": aliquota,
                             "Anni_num": anni,
@@ -258,13 +263,15 @@ if file_caricati:
                 
             if righe_estratte:
                 df_calc = pd.DataFrame(righe_estratte)
-                totale_spese = df_calc["Valore_num"].sum()
+                totale_netto_spese = df_calc["Valore_Netto"].sum()
                 totale_iva_righe = df_calc["IVA_num"].sum()
+                totale_lordo_spese = df_calc["Valore_Lordo"].sum()
                 
-                cespiti_puri = df_calc[df_calc["Aliquota_num"] > 0]["Valore_num"].sum()
-                totale_non_ammesso_riga = totale_spese - cespiti_puri
+                # Il calcolo del libro cespiti ora somma i VALORI LORDI
+                cespiti_puri = df_calc[df_calc["Aliquota_num"] > 0]["Valore_Lordo"].sum()
+                totale_non_ammesso_riga = totale_lordo_spese - cespiti_puri
                 
-                totale_imponibile_globale += totale_spese
+                totale_lordo_globale += totale_lordo_spese
                 totale_cespiti_globale += cespiti_puri
                 totale_non_ammesso_globale += totale_non_ammesso_riga
                 
@@ -284,9 +291,10 @@ if file_caricati:
                 <th>Descrizione Articolo / Servizio</th>
                 <th>Valore Netto (€)</th>
                 <th>IVA (€)</th>
+                <th style="background-color: #e2e8f0;">Valore Lordo (€)</th>
                 <th>Esito Fiscale (Aziendale / Normativo)</th>
                 <th>Aliquota Amm. (%)</th>
-                <th>Azione Libro Cespiti (Note)</th>
+                <th>Azione Libro Cespiti</th>
             </tr>
         </thead>
         <tbody>
@@ -294,15 +302,14 @@ if file_caricati:
                 
                 for riga in righe_estratte:
                     stile_cella = "color: #b91c1c; font-weight: 500;" if riga['Aliquota_num'] == 0 else "color: #1e293b;"
-                    
-                    # Evidenziazione colore specifico per la colonna Note
                     colore_nota = "#b91c1c" if riga['Aliquota_num'] == 0 else "#047857"
                     
                     html_fattura += f"""
             <tr>
                 <td style="{stile_cella}">{riga['Descrizione']}</td>
-                <td style="{stile_cella}">{formatta_euro(riga['Valore_num'])}</td>
+                <td style="{stile_cella}">{formatta_euro(riga['Valore_Netto'])}</td>
                 <td style="{stile_cella}">{formatta_euro(riga['IVA_num'])}</td>
+                <td style="{stile_cella}; background-color: #f8fafc;"><b>{formatta_euro(riga['Valore_Lordo'])}</b></td>
                 <td style="{stile_cella}"><b>{riga['Esito Fiscale']}</b></td>
                 <td style="{stile_cella}">{formatta_decimale(riga['Aliquota_num'])}</td>
                 <td style="color: {colore_nota}; font-weight: bold;">{riga['Nota_Azione']}</td>
@@ -312,8 +319,9 @@ if file_caricati:
                 html_fattura += f"""
             <tr style="background-color: #f1f5f9; font-weight: bold; color: #0f172a; border-top: 2px solid #94a3b8;">
                 <td style="text-align: right; color: #0f172a;">TOTALE RIGHE</td>
-                <td style="color: #0f172a;">{formatta_euro(totale_spese)}</td>
+                <td style="color: #0f172a;">{formatta_euro(totale_netto_spese)}</td>
                 <td style="color: #0f172a;">{formatta_euro(totale_iva_righe)}</td>
+                <td style="color: #0f172a; background-color: #e2e8f0;">{formatta_euro(totale_lordo_spese)}</td>
                 <td></td>
                 <td></td>
                 <td></td>
@@ -321,7 +329,7 @@ if file_caricati:
         </tbody>
     </table>
     <div style="text-align: right; padding: 8px 12px; background-color: #ffffff; border-radius: 0 0 6px 6px; font-size: 14px;">
-        <b>Imponibile Riga:</b> € {formatta_euro(totale_spese)} &nbsp;&nbsp;|&nbsp;&nbsp; 
+        <b>Costo Totale Lordo:</b> € {formatta_euro(totale_lordo_spese)} &nbsp;&nbsp;|&nbsp;&nbsp; 
         <span style="color: #047857; font-size: 14px;"><b>Da Iscrivere a Libro Cespiti:</b> € {formatta_euro(cespiti_puri)}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         <span style="color: #b91c1c; font-size: 14px;"><b>Spese Correnti / Non Ammesse:</b> € {formatta_euro(totale_non_ammesso_riga)}</span>
     </div>
@@ -335,15 +343,15 @@ if file_caricati:
         except Exception as e:
             st.error(f"Errore di lettura nel file {file_caricato.name}: {e}")
             
-    if totale_imponibile_globale > 0:
+    if totale_lordo_globale > 0:
         st.markdown('<hr style="border: 2px solid #000; margin-top: 40px;" class="no-print">', unsafe_allow_html=True)
         st.markdown(f"""
             <div style="page-break-inside: avoid; border: 2px solid #1e293b; padding: 20px; border-radius: 8px; margin-top: 20px;">
-                <h3 style="margin-top:0; text-align:center;">📊 RIEPILOGO GLOBALE REPORT</h3>
+                <h3 style="margin-top:0; text-align:center;">📊 RIEPILOGO GLOBALE REPORT (VALORI LORDI)</h3>
                 <div style="display: flex; justify-content: space-around; margin-top: 15px;">
                     <div style="text-align: center;">
-                        <p style="margin:0; font-size: 16px; color: #475569;">Totale Imponibile Caricato</p>
-                        <h2 style="margin:0; color: #0f172a;">€ {formatta_euro(totale_imponibile_globale)}</h2>
+                        <p style="margin:0; font-size: 16px; color: #475569;">Totale Costo Lordo Inserito</p>
+                        <h2 style="margin:0; color: #0f172a;">€ {formatta_euro(totale_lordo_globale)}</h2>
                     </div>
                     <div style="text-align: center;">
                         <p style="margin:0; font-size: 16px; color: #475569;">Totale Ammortizzabile (Beni)</p>
