@@ -40,7 +40,9 @@ files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
     for f in files:
-                   
+        try:
+            radice = ET.parse(f).getroot()
+            
             # --- ESTRAZIONE INTESTAZIONE ---
             try:
                 fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
@@ -54,8 +56,13 @@ if files:
                 
             tot_iva = sum([float(i.find('Imposta').text) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
             
-            st.subheader(f"📄 Fattura: {f.name} | Fornitore: {fornitore}")
-            st.markdown(f"**Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
+            # --- VISUALIZZAZIONE INTESTAZIONE PERSONALIZZATA ---
+            st.subheader(f"Fornitore: {fornitore}")
+            st.markdown(f"""
+                <div style="font-size: 24px; font-weight: bold; color: #1e3a8a; margin-bottom: 20px;">
+                    Totale Fattura: € {fmt(tot_fattura)} &nbsp;&nbsp;|&nbsp;&nbsp; Totale IVA: € {fmt(tot_iva)}
+                </div>
+            """, unsafe_allow_html=True)
             
             # --- ANALISI RIGHE ---
             dati = []
