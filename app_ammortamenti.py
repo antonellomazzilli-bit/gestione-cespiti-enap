@@ -133,7 +133,6 @@ def classifica_voce(descrizione, prezzo_lordo):
     if not descrizione: return "Sconosciuto", 0.0, "Nessuna descrizione"
     desc_lower = descrizione.lower()
     
-    # Estrazione dinamica della parola che innesca lo scarto
     motivo_pesante = next((p for p in cluster_servizi_pesanti if p in desc_lower), None)
     if motivo_pesante: return "Spesa Corrente / Servizio non ammortizzabile", 0.0, f"Rilevato servizio di tipo: '{motivo_pesante}'"
     
@@ -246,7 +245,9 @@ if file_caricati:
                         
                         categoria, aliquota, motivazione = classifica_voce(descrizione, prezzo_lordo)
                         
-                        # Assemblaggio HTML della nota per mostrare la motivazione in piccolo
+                        # --- CORREZIONE: RE-INSERITO IL CALCOLO DEGLI ANNI ---
+                        anni = 0.0 if aliquota == 0 else (1.0 if aliquota == 100 else round(100 / aliquota, 1))
+                        
                         if aliquota == 0:
                             nota_azione = f"❌ SCARTATO<br><span style='font-size:10px; font-weight:normal; color:#b91c1c;'>Motivo: {motivazione}</span>"
                         elif aliquota == 100:
@@ -300,6 +301,7 @@ if file_caricati:
                 <th style="background-color: #e2e8f0;">Valore Lordo (€)</th>
                 <th>Esito Fiscale (Aziendale / Normativo)</th>
                 <th>Aliquota Amm. (%)</th>
+                <th>Anni</th>
                 <th>Azione Libro Cespiti</th>
             </tr>
         </thead>
@@ -318,6 +320,7 @@ if file_caricati:
                 <td style="{stile_cella}; background-color: #f8fafc;"><b>{formatta_euro(riga['Valore_Lordo'])}</b></td>
                 <td style="{stile_cella}"><b>{riga['Esito Fiscale']}</b></td>
                 <td style="{stile_cella}">{formatta_decimale(riga['Aliquota_num'])}</td>
+                <td style="{stile_cella}">{formatta_anni(riga['Anni_num'])}</td>
                 <td style="color: {colore_nota}; font-weight: bold; line-height: 1.3;">{riga['Nota_Azione']}</td>
             </tr>
 """
@@ -328,6 +331,7 @@ if file_caricati:
                 <td style="color: #0f172a;">{formatta_euro(totale_netto_spese)}</td>
                 <td style="color: #0f172a;">{formatta_euro(totale_iva_righe)}</td>
                 <td style="color: #0f172a; background-color: #e2e8f0;">{formatta_euro(totale_lordo_spese)}</td>
+                <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
