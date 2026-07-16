@@ -130,10 +130,15 @@ cluster_mobili = ["scrivania", "sedia", "seduta", "poltrona", "banco", "armadio"
 cluster_sollevamento = ["sollevamento", "elevatore", "gru ", "muletto", "carrello elevatore", "paranco", "argano"]
 
 def classifica_voce(descrizione, prezzo_lordo):
-    if not descrizione: return "Sconosciuto", 0.0
+    if not descrizione: return "Sconosciuto", 0.0, "Nessuna descrizione"
     desc_lower = descrizione.lower()
     
-    if any(parola in desc_lower for parola in cluster_servizi_pesanti): return "Spesa Corrente / Servizio non ammortizzabile", 0.0
+    # Estrazione dinamica della parola che innesca lo scarto
+    motivo_pesante = next((p for p in cluster_servizi_pesanti if p in desc_lower), None)
+    if motivo_pesante: return "Spesa Corrente / Servizio non ammortizzabile", 0.0, f"Rilevato servizio di tipo: '{motivo_pesante}'"
+    
+    categoria = ""
+    aliquota = 0.0
     
     if any(parola in desc_lower for parola in cluster_sollevamento): categoria, aliquota = "AA2 - Impianti e mezzi di sollevamento (Sottosp. 4)", 7.5
     elif any(parola in desc_lower for parola in cluster_hardware): categoria, aliquota = "AA4 - Elaboratori elettronici e sistemi hardware (Sottosp. 41)", 33.33
@@ -142,14 +147,16 @@ def classifica_voce(descrizione, prezzo_lordo):
     elif any(parola in desc_lower for parola in cluster_impianti): categoria, aliquota = "AA2 - Impianti generici di condizionamento, allarme e cablaggio (Sottosp. 44)", 16.66
     elif any(parola in desc_lower for parola in cluster_mobili): categoria, aliquota = "AA7 - Mobili e arredi ordinari d'ufficio (Sottosp. 43)", 12.50
     elif any(parola in desc_lower for parola in cluster_laboratorio): categoria, aliquota = "AA8 - Macchinari, apparecchi e attrezzature di laboratorio (Sottosp. 5)", 15.0
-    elif any(parola in desc_lower for parola in cluster_accessori): return "Spesa Corrente / Servizio accessorio", 0.0
-    else: categoria, aliquota = "AA3 - Attrezzatura Generica (Da Verificare)", 15.0
     
-    # Lo sbarramento viene ora calcolato sul COSTO LORDO (inclusa IVA indetraibile)
+    if not categoria:
+        motivo_accessorio = next((p for p in cluster_accessori if p in desc_lower), None)
+        if motivo_accessorio: return "Spesa Corrente / Servizio accessorio", 0.0, f"Costo accessorio isolato: '{motivo_accessorio}'"
+        categoria, aliquota = "AA3 - Attrezzatura Generica (Da Verificare)", 15.0
+    
     if prezzo_lordo <= 516.46 and aliquota > 0:
-        return "AA9 - Beni ammortizzabili meno di 1 anno (Sottosp. 35)", 100.0
+        return "AA9 - Beni ammortizzabili meno di 1 anno (Sottosp. 35)", 100.0, "Art. 102 TUIR (Beni < 516,46€)"
         
-    return categoria, aliquota
+    return categoria, aliquota, "Ammortamento ordinario"
 
 st.title("Classificatore Fatture XML (Database 2025)")
 
@@ -235,17 +242,17 @@ if file_caricati:
                     
                     if descrizione and prezzo_netto > 0:
                         iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
-                        
-                        # --- CALCOLO DEL LORDO (IL VERO COSTO DEL BENE) ---
                         prezzo_lordo = prezzo_netto + iva_calcolata
                         
-                        categoria, aliquota = classifica_voce(descrizione, prezzo_lordo)
-                        anni = 0.0 if aliquota == 0 else (1.0 if aliquota == 100 else round(100 / aliquota, 1))
+                        categoria, aliquota, motivazione = classifica_voce(descrizione, prezzo_lordo)
                         
+                        # Assemblaggio HTML della nota per mostrare la motivazione in piccolo
                         if aliquota == 0:
-                            nota_azione = "❌ SCARTATO (Spesa Corrente)"
+                            nota_azione = f"❌ SCARTATO<br><span style='font-size:10px; font-weight:normal; color:#b91c1c;'>Motivo: {motivazione}</span>"
+                        elif aliquota == 100:
+                            nota_azione = f"✔️ DA ISCRIVERE<br><span style='font-size:10px; font-weight:normal; color:#047857;'>Motivo: {motivazione}</span>"
                         else:
-                            nota_azione = "✔️ DA ISCRIVERE (Lordo)"
+                            nota_azione = f"✔️ DA ISCRIVERE<br><span style='font-size:10px; font-weight:normal; color:#475569;'>{motivazione}</span>"
                         
                         righe_estratte.append({
                             "Descrizione": descrizione,
@@ -267,7 +274,6 @@ if file_caricati:
                 totale_iva_righe = df_calc["IVA_num"].sum()
                 totale_lordo_spese = df_calc["Valore_Lordo"].sum()
                 
-                # Il calcolo del libro cespiti ora somma i VALORI LORDI
                 cespiti_puri = df_calc[df_calc["Aliquota_num"] > 0]["Valore_Lordo"].sum()
                 totale_non_ammesso_riga = totale_lordo_spese - cespiti_puri
                 
@@ -312,7 +318,7 @@ if file_caricati:
                 <td style="{stile_cella}; background-color: #f8fafc;"><b>{formatta_euro(riga['Valore_Lordo'])}</b></td>
                 <td style="{stile_cella}"><b>{riga['Esito Fiscale']}</b></td>
                 <td style="{stile_cella}">{formatta_decimale(riga['Aliquota_num'])}</td>
-                <td style="color: {colore_nota}; font-weight: bold;">{riga['Nota_Azione']}</td>
+                <td style="color: {colore_nota}; font-weight: bold; line-height: 1.3;">{riga['Nota_Azione']}</td>
             </tr>
 """
                     
