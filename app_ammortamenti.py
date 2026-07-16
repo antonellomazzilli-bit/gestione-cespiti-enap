@@ -228,11 +228,14 @@ if file_caricati:
         <tbody>
 """
                 
+               # Sostituisci il blocco del ciclo 'for riga in righe_estratte' nel tuo file app_ammortamenti-v6.py con questo:
+
                 for riga in righe_estratte:
                     stile_cella = "color: #b91c1c; font-weight: 500;" if riga['Aliquota_num'] == 0 else "color: #1e293b;"
                     colore_nota = "#b91c1c" if riga['Aliquota_num'] == 0 else "#047857"
                     
-                    html_fattura += f"""
+                    # Questa riga ora forza la visualizzazione della motivazione specifica
+                    html_fattura += f'''
             <tr>
                 <td style="{stile_cella}">{riga['Descrizione']}</td>
                 <td style="{stile_cella}">{formatta_euro(riga['Valore_Netto'])}</td>
