@@ -59,12 +59,21 @@ def classifica_voce(descrizione, prezzo_lordo, aliq_soft, aliq_straord):
     if not descrizione: return "Sconosciuto", 0.0, "Nessuna descrizione"
     desc_lower = descrizione.lower()
     
+    # --- PRIORITÀ MASSIMA: RICERCA DI BENI FISICI ---
+    # Se troviamo un bene fisico, ignoriamo lo scarto dei "lavori"
+    if any(p in desc_lower for p in ["porta", "copricassonetto", "infisso", "scrivania", "sedia"]):
+        categoria, aliquota = "AA7 - Mobili e arredi ordinari d'ufficio (Sottosp. 43)", 12.5
+        return categoria, aliquota, f"Bene fisico rilevato: 'porta/infisso' - Capitalizzazione forzata"
+
+    # --- SCUDO SERVIZI ORDINARI (Solo se non abbiamo trovato beni sopra) ---
     motivo_straordinario = next((p for p in cluster_straordinaria if p in desc_lower), None)
     if motivo_straordinario: 
         return "Spese Incrementali / Manut. Straordinaria", aliq_straord, f"Intervento strutturale rilevato: '{motivo_straordinario}'"
     
     motivo_pesante = next((p for p in cluster_servizi_pesanti if p in desc_lower), None)
     if motivo_pesante: return "Spesa Corrente / Servizio non ammortizzabile", 0.0, f"Rilevato servizio ordinario: '{motivo_pesante}'"
+    
+    # ... (il resto della funzione classifica_voce rimane invariato)
     
     categoria = ""
     aliquota = 0.0
