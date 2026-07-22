@@ -44,7 +44,7 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Categoria Fiscale"]
+    headers = ["Fornitore", "Rif. Fattura", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Categoria Fiscale"]
     
     pdf.set_font("helvetica", style="B", size=8)
     col_widths = [pdf.get_string_width(h) + 6 for h in headers] 
@@ -54,20 +54,26 @@ def genera_pdf(dati):
     pdf.set_font("helvetica", size=8)
     
     for row in dati:
-        forn = str(row['Fornitore'])[:50].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:80].encode('latin-1', 'replace').decode('latin-1')
+        forn = str(row['Fornitore'])[:40].encode('latin-1', 'replace').decode('latin-1')
+        desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
         
+        # Estrazione Rif. Fattura
+        rif_fat = f"N. {row['Numero Fattura']} del {row['Data Fattura']}"
+        
+        # Logica di Blanking
         if row['File XML'] != fattura_corrente:
             tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            rif_stampabile = rif_fat
             fattura_corrente = row['File XML']
         else:
             tot_doc = "" 
+            rif_stampabile = ""
             
         lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
         cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
         
-        riga = [forn, desc, tot_doc, lordo, aliq, cat]
+        riga = [forn, rif_stampabile, desc, tot_doc, lordo, aliq, cat]
         dati_stampabili.append(riga)
         
         for i, val in enumerate(riga):
@@ -84,7 +90,8 @@ def genera_pdf(dati):
     
     pdf.set_font("helvetica", style="B", size=8)
     for i, header in enumerate(headers):
-        align_header = 'C' if i in [2, 3, 4] else 'L'
+        # Indici: 3=Tot, 4=Lordo, 5=Aliq
+        align_header = 'C' if i in [3, 4, 5] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
@@ -94,7 +101,7 @@ def genera_pdf(dati):
             while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
                 testocella = testocella[:-1]
                 
-            align_cell = 'R' if i in [2, 3] else ('C' if i == 4 else 'L')
+            align_cell = 'R' if i in [3, 4] else ('C' if i == 5 else 'L')
             pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
         pdf.ln()
         
@@ -145,17 +152,20 @@ if files:
                 cat, aliq, motivo = classifica_voce(desc, aliquota_soft, aliquota_straord)
                 
                 totale_da_mostrare = fmt(tot_fattura) if indice_riga == 0 else ""
+                rif_fattura_visivo = f"N. {numero_fattura} del {data_fattura}" if indice_riga == 0 else ""
                 
                 dati_visivi.append({
                     "Descrizione": desc, 
                     "Imponibile (€)": fmt(prezzo_netto),
                     "IVA (€)": fmt(iva_calcolata),
                     "Lordo Riga (€)": fmt(prezzo_lordo),
+                    "Rif. Fattura": rif_fattura_visivo,
                     "Tot. Fattura (€)": totale_da_mostrare,
                     "Aliquota (%)": aliq, 
                     "Motivo": motivo
                 })
                 
+                # Excel mantiene i dati completi per consentire filtri e pivot
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
@@ -173,7 +183,10 @@ if files:
                 })
             
             if dati_visivi:
-                st.dataframe(pd.DataFrame(dati_visivi), use_container_width=True, hide_index=True)
+                # Riordina le colonne visive a schermo per maggiore chiarezza
+                df_visivo = pd.DataFrame(dati_visivi)
+                col_order = ["Rif. Fattura", "Descrizione", "Imponibile (€)", "IVA (€)", "Lordo Riga (€)", "Tot. Fattura (€)", "Aliquota (%)", "Motivo"]
+                st.dataframe(df_visivo[col_order], use_container_width=True, hide_index=True)
             else:
                 st.warning("Nessuna linea trovata nel file.")
                 
