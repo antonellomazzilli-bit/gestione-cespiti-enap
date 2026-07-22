@@ -3,6 +3,7 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import io
 from fpdf import FPDF
+from datetime import datetime
 
 st.set_page_config(page_title="Gestione Ammortamenti En.A.P.", layout="wide")
 
@@ -35,11 +36,15 @@ def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
     # 4. Default
     return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF ---
+# --- FUNZIONE CREAZIONE PDF CON FIX BYTES ---
 def genera_pdf(dati):
     pdf = FPDF(orientation='L') # Impaginazione orizzontale
     pdf.add_page()
-    pdf.set_font("helvetica", size=10)
+    
+    # Intestazione con Data e Ora
+    data_ora = datetime.now().strftime("%d/%m/%Y alle %H:%M")
+    pdf.set_font("helvetica", style="I", size=8)
+    pdf.cell(0, 5, f"Documento generato il {data_ora}", align="R", new_x="LMARGIN", new_y="NEXT")
     
     # Titolo
     pdf.set_font("helvetica", style="B", size=14)
@@ -58,7 +63,7 @@ def genera_pdf(dati):
     # Inserimento Dati
     pdf.set_font("helvetica", size=8)
     for row in dati:
-        # Pulizia e troncamento testi per non sforare i bordi della tabella
+        # Pulizia testi per evitare errori di decodifica nel PDF
         forn = str(row['Fornitore'])[:30].encode('latin-1', 'replace').decode('latin-1')
         desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
         lordo = f"{row['Valore Netto']:.2f}"
@@ -72,7 +77,8 @@ def genera_pdf(dati):
         pdf.cell(col_widths[4], 6, cat, border=1)
         pdf.ln()
         
-    return pdf.output()
+    # FIX: forzatura della conversione in bytes richiesta da Streamlit
+    return bytes(pdf.output())
 
 st.title("Classificatore Fatture XML")
 files = st.file_uploader("Carica XML", accept_multiple_files=True)
@@ -134,7 +140,6 @@ if files:
         st.markdown("---")
         st.subheader("📥 Esportazione Dati")
         
-        # Suddivisione in due colonne per affiancare i pulsanti
         col1, col2 = st.columns(2)
         
         # 1. Pulsante EXCEL
