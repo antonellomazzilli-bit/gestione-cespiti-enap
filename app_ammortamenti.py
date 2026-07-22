@@ -36,7 +36,7 @@ def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
     # 4. Default
     return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF CON FIX BYTES ---
+# --- FUNZIONE CREAZIONE PDF CON ALIQUOTA ---
 def genera_pdf(dati):
     pdf = FPDF(orientation='L') # Impaginazione orizzontale
     pdf.add_page()
@@ -51,33 +51,35 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Intestazioni Tabella
+    # Intestazioni Tabella (Spazio totale distribuito: 275)
     pdf.set_font("helvetica", style="B", size=9)
-    col_widths = [55, 100, 30, 30, 60]
-    headers = ["Fornitore", "Descrizione Articolo", "Lordo (EUR)", "Quota (EUR)", "Categoria Fiscale"]
+    col_widths = [45, 90, 25, 20, 25, 70]
+    headers = ["Fornitore", "Descrizione Articolo", "Lordo (EUR)", "Aliq. %", "Quota (EUR)", "Categoria Fiscale"]
     
     for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 8, header, border=1)
+        align_header = 'C' if i in [2, 3, 4] else 'L'
+        pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
     # Inserimento Dati
     pdf.set_font("helvetica", size=8)
     for row in dati:
-        # Pulizia testi per evitare errori di decodifica nel PDF
-        forn = str(row['Fornitore'])[:30].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
-        lordo = f"{row['Valore Netto']:.2f}"
-        quota = f"{row['Quota Ammortamento']:.2f}"
-        cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
+        # Pulizia e troncamento per evitare sforamenti
+        forn = str(row['Fornitore'])[:25].encode('latin-1', 'replace').decode('latin-1')
+        desc = str(row['Descrizione Bene/Servizio'])[:55].encode('latin-1', 'replace').decode('latin-1')
+        lordo = f"{row['Valore Netto']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        aliq = f"{row['Aliquota (%)']:.1f}%"
+        quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        cat = str(row['Categoria Fiscale'])[:40].encode('latin-1', 'replace').decode('latin-1')
         
         pdf.cell(col_widths[0], 6, forn, border=1)
         pdf.cell(col_widths[1], 6, desc, border=1)
-        pdf.cell(col_widths[2], 6, lordo, border=1)
-        pdf.cell(col_widths[3], 6, quota, border=1)
-        pdf.cell(col_widths[4], 6, cat, border=1)
+        pdf.cell(col_widths[2], 6, lordo, border=1, align='R')
+        pdf.cell(col_widths[3], 6, aliq, border=1, align='C')
+        pdf.cell(col_widths[4], 6, quota, border=1, align='R')
+        pdf.cell(col_widths[5], 6, cat, border=1)
         pdf.ln()
         
-    # FIX: forzatura della conversione in bytes richiesta da Streamlit
     return bytes(pdf.output())
 
 st.title("Classificatore Fatture XML")
@@ -103,7 +105,7 @@ if files:
             
             dati_visivi = []
             for linea in radice.iter('DettaglioLinee'):
-                desc = linea.findtext('Descrizione')
+                desc = linea.findtext('Descrizione') or "Nessuna descrizione"
                 prezzo = float(linea.findtext('PrezzoTotale') or 0)
                 
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo, aliquota_soft, aliquota_straord)
