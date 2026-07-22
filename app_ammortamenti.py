@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import xml.etree.ElementTree as ET
 import io
+from fpdf import FPDF
 
 st.set_page_config(page_title="Gestione Ammortamenti En.A.P.", layout="wide")
 
@@ -13,11 +14,9 @@ with st.sidebar:
 
 # --- FUNZIONI DI FORMATTAZIONE E LOGICA ---
 def fmt(v):
-    """Formatta i numeri nel formato italiano: 1.234,56"""
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
-    """Analizza la descrizione e determina la classificazione fiscale"""
     desc_l = desc.lower()
     
     # 1. PRIORITÀ MASSIMA: Beni fisici
@@ -36,17 +35,55 @@ def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
     # 4. Default
     return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
 
+# --- FUNZIONE CREAZIONE PDF ---
+def genera_pdf(dati):
+    pdf = FPDF(orientation='L') # Impaginazione orizzontale
+    pdf.add_page()
+    pdf.set_font("helvetica", size=10)
+    
+    # Titolo
+    pdf.set_font("helvetica", style="B", size=14)
+    pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+    
+    # Intestazioni Tabella
+    pdf.set_font("helvetica", style="B", size=9)
+    col_widths = [55, 100, 30, 30, 60]
+    headers = ["Fornitore", "Descrizione Articolo", "Lordo (EUR)", "Quota (EUR)", "Categoria Fiscale"]
+    
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 8, header, border=1)
+    pdf.ln()
+    
+    # Inserimento Dati
+    pdf.set_font("helvetica", size=8)
+    for row in dati:
+        # Pulizia e troncamento testi per non sforare i bordi della tabella
+        forn = str(row['Fornitore'])[:30].encode('latin-1', 'replace').decode('latin-1')
+        desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
+        lordo = f"{row['Valore Netto']:.2f}"
+        quota = f"{row['Quota Ammortamento']:.2f}"
+        cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
+        
+        pdf.cell(col_widths[0], 6, forn, border=1)
+        pdf.cell(col_widths[1], 6, desc, border=1)
+        pdf.cell(col_widths[2], 6, lordo, border=1)
+        pdf.cell(col_widths[3], 6, quota, border=1)
+        pdf.cell(col_widths[4], 6, cat, border=1)
+        pdf.ln()
+        
+    return pdf.output()
+
 st.title("Classificatore Fatture XML")
 files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
-    dati_globali_excel = []  # Contenitore cumulativo per l'esportazione finale
+    dati_globali_excel = []
     
     for f in files:
         try:
             radice = ET.parse(f).getroot()
             
-            # --- ESTRAZIONE INTESTAZIONE ---
             try: fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
             except: fornitore = "Non specificato"
                 
@@ -58,7 +95,6 @@ if files:
             st.subheader(f"📄 Fattura: {f.name} | Fornitore: {fornitore}")
             st.markdown(f"**Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
             
-            # --- ANALISI RIGHE ---
             dati_visivi = []
             for linea in radice.iter('DettaglioLinee'):
                 desc = linea.findtext('Descrizione')
@@ -66,7 +102,6 @@ if files:
                 
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo, aliquota_soft, aliquota_straord)
                 
-                # 1. Dati formattati per la visualizzazione a schermo
                 dati_visivi.append({
                     "Descrizione": desc, 
                     "Valore (€)": fmt(prezzo), 
@@ -75,7 +110,6 @@ if files:
                     "Motivo": motivo
                 })
                 
-                # 2. Dati grezzi per l'elaborazione del file Excel
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "File XML": f.name,
@@ -95,23 +129,35 @@ if files:
         except Exception as e:
             st.error(f"Errore nella lettura del file {f.name}: {e}")
             
-    # --- GENERAZIONE PULSANTE EXCEL ---
+    # --- GENERAZIONE PULSANTI DOWNLOAD ---
     if dati_globali_excel:
         st.markdown("---")
         st.subheader("📥 Esportazione Dati")
         
-        # Converte la lista globale in un DataFrame Pandas
+        # Suddivisione in due colonne per affiancare i pulsanti
+        col1, col2 = st.columns(2)
+        
+        # 1. Pulsante EXCEL
         df_excel = pd.DataFrame(dati_globali_excel)
-        
-        # Scrive il DataFrame in memoria (buffer) in formato Excel
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        buffer_excel = io.BytesIO()
+        with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
             df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
+            
+        with col1:
+            st.download_button(
+                label="📊 Scarica Riepilogo in Excel",
+                data=buffer_excel.getvalue(),
+                file_name="Riepilogo_Ammortamenti.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+        # 2. Pulsante PDF
+        pdf_bytes = genera_pdf(dati_globali_excel)
         
-        # Crea il pulsante di download interattivo
-        st.download_button(
-            label="📊 Scarica Riepilogo Globale in Excel",
-            data=buffer.getvalue(),
-            file_name="Riepilogo_Ammortamenti.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with col2:
+            st.download_button(
+                label="📄 Scarica Riepilogo in PDF",
+                data=pdf_bytes,
+                file_name="Riepilogo_Ammortamenti.pdf",
+                mime="application/pdf"
+            )
