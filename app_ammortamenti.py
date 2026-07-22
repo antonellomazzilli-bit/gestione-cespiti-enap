@@ -46,7 +46,6 @@ def genera_pdf(dati):
     pdf.ln(5)
     
     pdf.set_font("helvetica", style="B", size=8)
-    # Larghezze ridistribuite per far entrare la colonna del Totale Fattura
     col_widths = [35, 65, 25, 25, 15, 25, 50]
     headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Quota", "Categoria Fiscale"]
     
@@ -56,10 +55,21 @@ def genera_pdf(dati):
     pdf.ln()
     
     pdf.set_font("helvetica", size=8)
+    
+    # Variabile di appoggio per tracciare il cambio fattura
+    fattura_corrente = None
+    
     for row in dati:
         forn = str(row['Fornitore'])[:20].encode('latin-1', 'replace').decode('latin-1')
         desc = str(row['Descrizione Bene/Servizio'])[:40].encode('latin-1', 'replace').decode('latin-1')
-        tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        
+        # Logica di "Blanking": stampa il totale solo sulla prima riga di ogni fattura
+        if row['File XML'] != fattura_corrente:
+            tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            fattura_corrente = row['File XML']
+        else:
+            tot_doc = "" # Lascia vuoto per le righe successive della stessa fattura
+            
         lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
         quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -89,7 +99,6 @@ if files:
             try: fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
             except: fornitore = "Non specificato"
             
-            # Recupero Numero e Data Fattura
             numero_fattura = radice.findtext('.//DatiGeneraliDocumento/Numero') or "N/D"
             data_raw = radice.findtext('.//DatiGeneraliDocumento/Data') or "N/D"
             if data_raw != "N/D" and len(data_raw) >= 10:
@@ -102,12 +111,13 @@ if files:
                 
             tot_iva = sum([float(i.find('Imposta').text) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
             
-            # Intestazione aggiornata
             st.subheader(f"📄 FATTURA N. {numero_fattura} del {data_fattura}")
             st.markdown(f"**Fornitore:** {fornitore} | **Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
             
             dati_visivi = []
-            for linea in radice.iter('DettaglioLinee'):
+            
+            # Utilizzo enumerate per capire quale riga stiamo processando
+            for indice_riga, linea in enumerate(radice.iter('DettaglioLinee')):
                 desc = linea.findtext('Descrizione') or "Nessuna descrizione"
                 
                 prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
@@ -121,19 +131,21 @@ if files:
                 
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
-                # Aggiunta Totale Fattura alla visualizzazione a schermo
+                # Se è la prima riga della fattura (indice 0), scrivo il totale, altrimenti lascio vuoto
+                totale_da_mostrare = fmt(tot_fattura) if indice_riga == 0 else ""
+                
                 dati_visivi.append({
                     "Descrizione": desc, 
                     "Imponibile (€)": fmt(prezzo_netto),
                     "IVA (€)": fmt(iva_calcolata),
                     "Lordo Riga (€)": fmt(prezzo_lordo),
-                    "Tot. Fattura (€)": fmt(tot_fattura),
+                    "Tot. Fattura (€)": totale_da_mostrare,
                     "Aliquota (%)": aliq, 
                     "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
                 })
                 
-                # Aggiunta Dati completi all'Excel
+                # Nel file Excel esporto sempre il dato numerico puro per non corrompere i filtri
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
