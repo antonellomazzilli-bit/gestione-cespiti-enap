@@ -45,30 +45,33 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    pdf.set_font("helvetica", style="B", size=9)
-    col_widths = [45, 85, 25, 20, 25, 70]
-    headers = ["Fornitore", "Descrizione Articolo", "Lordo", "Aliq. %", "Quota", "Categoria Fiscale"]
+    pdf.set_font("helvetica", style="B", size=8)
+    # Larghezze ridistribuite per far entrare la colonna del Totale Fattura
+    col_widths = [35, 65, 25, 25, 15, 25, 50]
+    headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Quota", "Categoria Fiscale"]
     
     for i, header in enumerate(headers):
-        align_header = 'C' if i in [2, 3, 4] else 'L'
+        align_header = 'C' if i in [2, 3, 4, 5] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
     pdf.set_font("helvetica", size=8)
     for row in dati:
-        forn = str(row['Fornitore'])[:25].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:50].encode('latin-1', 'replace').decode('latin-1')
-        lordo = f"{row['Valore Lordo (Costo)']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        forn = str(row['Fornitore'])[:20].encode('latin-1', 'replace').decode('latin-1')
+        desc = str(row['Descrizione Bene/Servizio'])[:40].encode('latin-1', 'replace').decode('latin-1')
+        tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
         quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        cat = str(row['Categoria Fiscale'])[:40].encode('latin-1', 'replace').decode('latin-1')
+        cat = str(row['Categoria Fiscale'])[:30].encode('latin-1', 'replace').decode('latin-1')
         
         pdf.cell(col_widths[0], 6, forn, border=1)
         pdf.cell(col_widths[1], 6, desc, border=1)
-        pdf.cell(col_widths[2], 6, lordo, border=1, align='R')
-        pdf.cell(col_widths[3], 6, aliq, border=1, align='C')
-        pdf.cell(col_widths[4], 6, quota, border=1, align='R')
-        pdf.cell(col_widths[5], 6, cat, border=1)
+        pdf.cell(col_widths[2], 6, tot_doc, border=1, align='R')
+        pdf.cell(col_widths[3], 6, lordo, border=1, align='R')
+        pdf.cell(col_widths[4], 6, aliq, border=1, align='C')
+        pdf.cell(col_widths[5], 6, quota, border=1, align='R')
+        pdf.cell(col_widths[6], 6, cat, border=1)
         pdf.ln()
         
     return bytes(pdf.output())
@@ -85,14 +88,23 @@ if files:
             
             try: fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
             except: fornitore = "Non specificato"
+            
+            # Recupero Numero e Data Fattura
+            numero_fattura = radice.findtext('.//DatiGeneraliDocumento/Numero') or "N/D"
+            data_raw = radice.findtext('.//DatiGeneraliDocumento/Data') or "N/D"
+            if data_raw != "N/D" and len(data_raw) >= 10:
+                data_fattura = f"{data_raw[8:10]}/{data_raw[5:7]}/{data_raw[0:4]}"
+            else:
+                data_fattura = data_raw
                 
             try: tot_fattura = float(radice.find('.//DatiGeneraliDocumento/ImportoTotaleDocumento').text)
             except: tot_fattura = 0.0
                 
             tot_iva = sum([float(i.find('Imposta').text) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
             
-            st.subheader(f"📄 Fattura: {f.name} | Fornitore: {fornitore}")
-            st.markdown(f"**Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
+            # Intestazione aggiornata
+            st.subheader(f"📄 FATTURA N. {numero_fattura} del {data_fattura}")
+            st.markdown(f"**Fornitore:** {fornitore} | **Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
             
             dati_visivi = []
             for linea in radice.iter('DettaglioLinee'):
@@ -109,24 +121,30 @@ if files:
                 
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
+                # Aggiunta Totale Fattura alla visualizzazione a schermo
                 dati_visivi.append({
                     "Descrizione": desc, 
                     "Imponibile (€)": fmt(prezzo_netto),
                     "IVA (€)": fmt(iva_calcolata),
-                    "Lordo (€)": fmt(prezzo_lordo), 
+                    "Lordo Riga (€)": fmt(prezzo_lordo),
+                    "Tot. Fattura (€)": fmt(tot_fattura),
                     "Aliquota (%)": aliq, 
                     "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
                 })
                 
+                # Aggiunta Dati completi all'Excel
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
+                    "Numero Fattura": numero_fattura,
+                    "Data Fattura": data_fattura,
                     "File XML": f.name,
                     "Descrizione Bene/Servizio": desc,
-                    "Valore Netto": prezzo_netto,
+                    "Valore Netto Riga": prezzo_netto,
                     "Aliquota IVA (%)": aliquota_iva_riga,
-                    "IVA Calcolata": iva_calcolata,
-                    "Valore Lordo (Costo)": prezzo_lordo,
+                    "IVA Calcolata Riga": iva_calcolata,
+                    "Valore Lordo Riga": prezzo_lordo,
+                    "Totale Documento": tot_fattura,
                     "Aliquota Amm. (%)": aliq,
                     "Quota Ammortamento": quota,
                     "Categoria Fiscale": cat,
