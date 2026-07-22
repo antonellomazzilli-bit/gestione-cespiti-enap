@@ -57,7 +57,6 @@ def genera_pdf(dati):
         forn = str(row['Fornitore'])[:40].encode('latin-1', 'replace').decode('latin-1')
         desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
         
-        # Estrazione Rif. Fattura (per la logica di blanking)
         rif_fat = f"N. {row['Numero Fattura']} del {row['Data Fattura']}"
         
         if row['File XML'] != fattura_corrente:
@@ -138,7 +137,6 @@ if files:
             for indice_riga, linea in enumerate(radice.iter('DettaglioLinee')):
                 desc = linea.findtext('Descrizione') or "Nessuna descrizione"
                 
-                # Calcolo invisibile dell'IVA per ottenere il Lordo
                 prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
                 try:
                     aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
@@ -162,7 +160,7 @@ if files:
                     "Motivo": motivo
                 })
                 
-                # Excel snellito senza Imponibile e dati IVA
+                # Manteniamo la variabile File XML in memoria solo per la costruzione corretta del PDF
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
@@ -193,7 +191,9 @@ if files:
         
         col1, col2 = st.columns(2)
         
-        df_excel = pd.DataFrame(dati_globali_excel)
+        # Eliminiamo la colonna "File XML" esclusivamente dalla matrice prima della conversione Excel
+        df_excel = pd.DataFrame(dati_globali_excel).drop(columns=['File XML'])
+        
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
             df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
