@@ -31,7 +31,7 @@ def classifica_voce(desc, aliq_soft, aliq_straord):
         
     return "AA3 - Generica", 15.0, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF STRUTTURATA COME A SCHERMO ---
+# --- FUNZIONE CREAZIONE PDF CON CONTROLLO IMPAGINAZIONE ---
 def genera_pdf(lista_fatture):
     pdf = FPDF(orientation='L') 
     pdf.add_page()
@@ -47,7 +47,20 @@ def genera_pdf(lista_fatture):
     headers = ["Rif. Fattura", "Descrizione", "Lordo Riga", "Tot. Fattura", "Aliq. %", "Motivo"]
     
     for fattura in lista_fatture:
-        # Intestazione specifica della fattura (come i subheader a schermo)
+        # LOGICA ANTI-TAGLIO (PREDIZIONE ALTEZZA)
+        # 14mm (Titoli) + 8mm (Header) + 5mm (Spazio Finale) = 27mm fissi + 6mm per ogni riga
+        altezza_blocco = 27 + (len(fattura['righe']) * 6)
+        # 210mm è l'altezza di un A4 orizzontale, tolto il margine di 15mm inferiore
+        spazio_rimanente = 210 - 15 - pdf.get_y()
+        
+        # Se la tabella non entra nello spazio rimanente...
+        if altezza_blocco > spazio_rimanente:
+            # ...e se entra comodamente in una pagina nuova (<= 180mm), oppure se lo spazio
+            # attuale è talmente poco (es. < 40mm) da non farci entrare nemmeno le intestazioni
+            if altezza_blocco <= 180 or spazio_rimanente < 40:
+                pdf.add_page()
+                
+        # Intestazione specifica della fattura
         pdf.set_font("helvetica", style="B", size=10)
         titolo = f"FATTURA N. {fattura['numero_fattura']} del {fattura['data_fattura']} | Fornitore: {fattura['fornitore']}"
         pdf.cell(0, 6, titolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
@@ -60,7 +73,6 @@ def genera_pdf(lista_fatture):
         pdf.set_font("helvetica", style="B", size=8)
         col_widths = [pdf.get_string_width(h) + 6 for h in headers]
         
-        # FASE 1: Misurazione larghezze usando conversioni stringa assolute
         for riga in fattura['righe']:
             valori = [
                 str(riga['Rif. Fattura']),
@@ -81,14 +93,12 @@ def genera_pdf(lista_fatture):
             fattore = max_page_width / tot_width
             col_widths = [w * fattore for w in col_widths]
             
-        # FASE 2: Stampa Intestazioni
         pdf.set_font("helvetica", style="B", size=8)
         for i, header in enumerate(headers):
             align_header = 'C' if i in [2, 3, 4] else 'L'
             pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
         pdf.ln()
         
-        # FASE 3: Stampa Righe con formattazione sicura per PDF
         pdf.set_font("helvetica", size=8)
         for riga in fattura['righe']:
             valori = [
@@ -106,7 +116,7 @@ def genera_pdf(lista_fatture):
                 pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
             pdf.ln()
         
-        pdf.ln(5) # Spaziatura tra una fattura e la successiva
+        pdf.ln(5)
         
     return bytes(pdf.output())
 
