@@ -31,8 +31,8 @@ def classifica_voce(desc, aliq_soft, aliq_straord):
         
     return "AA3 - Generica", 15.0, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF CON CALCOLO LARGHEZZA DINAMICA ---
-def genera_pdf(dati):
+# --- FUNZIONE CREAZIONE PDF STRUTTURATA COME A SCHERMO ---
+def genera_pdf(lista_fatture):
     pdf = FPDF(orientation='L') 
     pdf.add_page()
     
@@ -44,63 +44,70 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    headers = ["Fornitore", "Rif. Fattura", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Categoria Fiscale"]
+    # Intestazioni uguali a quelle a schermo
+    headers = ["Rif. Fattura", "Descrizione", "Lordo Riga", "Tot. Fattura", "Aliq. %", "Motivo"]
     
-    pdf.set_font("helvetica", style="B", size=8)
-    col_widths = [pdf.get_string_width(h) + 6 for h in headers] 
-    
-    dati_stampabili = []
-    fattura_corrente = None
-    pdf.set_font("helvetica", size=8)
-    
-    for row in dati:
-        forn = str(row['Fornitore'])[:40].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
+    for fattura in lista_fatture:
+        # Intestazione specifica della fattura (replica del subheader a schermo)
+        pdf.set_font("helvetica", style="B", size=10)
+        titolo = f"FATTURA N. {fattura['numero_fattura']} del {fattura['data_fattura']} | Fornitore: {fattura['fornitore']}"
+        pdf.cell(0, 6, titolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
         
-        rif_fat = f"N. {row['Numero Fattura']} del {row['Data Fattura']}"
-        
-        if row['File XML'] != fattura_corrente:
-            tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            rif_stampabile = rif_fat
-            fattura_corrente = row['File XML']
-        else:
-            tot_doc = "" 
-            rif_stampabile = ""
-            
-        lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
-        cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
-        
-        riga = [forn, rif_stampabile, desc, tot_doc, lordo, aliq, cat]
-        dati_stampabili.append(riga)
-        
-        for i, val in enumerate(riga):
-            w = pdf.get_string_width(val) + 4 
-            if w > col_widths[i]:
-                col_widths[i] = w
+        sottotitolo = f"Totale Fattura: EUR {fmt(fattura['tot_fattura'])} | Totale IVA: EUR {fmt(fattura['tot_iva'])}"
+        pdf.set_font("helvetica", style="", size=9)
+        pdf.cell(0, 6, sottotitolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
 
-    max_page_width = 277.0
-    tot_width = sum(col_widths)
-    
-    if tot_width > max_page_width:
-        fattore = max_page_width / tot_width
-        col_widths = [w * fattore for w in col_widths]
-    
-    pdf.set_font("helvetica", style="B", size=8)
-    for i, header in enumerate(headers):
-        align_header = 'C' if i in [3, 4, 5] else 'L'
-        pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
-    pdf.ln()
-    
-    pdf.set_font("helvetica", size=8)
-    for riga in dati_stampabili:
-        for i, testocella in enumerate(riga):
-            while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
-                testocella = testocella[:-1]
-                
-            align_cell = 'R' if i in [3, 4] else ('C' if i == 5 else 'L')
-            pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
+        # Calcolo larghezze per la tabella corrente
+        pdf.set_font("helvetica", style="B", size=8)
+        col_widths = [pdf.get_string_width(h) + 6 for h in headers]
+        
+        for riga in fattura['righe']:
+            valori = [
+                riga['Rif. Fattura'],
+                riga['Descrizione'][:60].encode('latin-1', 'replace').decode('latin-1'),
+                riga['Lordo Riga (€)'].replace("€", "EUR"), # Sostituzione euro per il PDF
+                riga['Tot. Fattura (€)'].replace("€", "EUR"),
+                riga['Aliquota (%)'],
+                riga['Motivo'].encode('latin-1', 'replace').decode('latin-1')
+            ]
+            for i, val in enumerate(valori):
+                w = pdf.get_string_width(str(val)) + 4
+                if w > col_widths[i]:
+                    col_widths[i] = w
+                    
+        max_page_width = 277.0
+        tot_width = sum(col_widths)
+        if tot_width > max_page_width:
+            fattore = max_page_width / tot_width
+            col_widths = [w * fattore for w in col_widths]
+            
+        # Stampa Intestazioni
+        pdf.set_font("helvetica", style="B", size=8)
+        for i, header in enumerate(headers):
+            align_header = 'C' if i in [2, 3, 4] else 'L'
+            pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
         pdf.ln()
+        
+        # Stampa Righe
+        pdf.set_font("helvetica", size=8)
+        for riga in fattura['righe']:
+            valori = [
+                riga['Rif. Fattura'],
+                riga['Descrizione'][:60].encode('latin-1', 'replace').decode('latin-1'),
+                riga['Lordo Riga (€)'],
+                riga['Tot. Fattura (€)'],
+                riga['Aliquota (%)'],
+                riga['Motivo'].encode('latin-1', 'replace').decode('latin-1')
+            ]
+            for i, testocella in enumerate(valori):
+                while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
+                    testocella = testocella[:-1]
+                align_cell = 'R' if i in [2, 3] else ('C' if i == 4 else 'L')
+                pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
+            pdf.ln()
+        
+        pdf.ln(5) # Spaziatura tra una fattura e la successiva
         
     return bytes(pdf.output())
 
@@ -109,6 +116,7 @@ files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
     dati_globali_excel = []
+    dati_pdf_global = [] # Nuova struttura dati isolata per le tabelle del PDF
     
     for f in files:
         try:
@@ -160,7 +168,6 @@ if files:
                     "Motivo": motivo
                 })
                 
-                # Manteniamo la variabile File XML in memoria solo per la costruzione corretta del PDF
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
@@ -175,6 +182,17 @@ if files:
                 })
             
             if dati_visivi:
+                # Salvataggio blocco fattura in memoria PDF
+                dati_pdf_global.append({
+                    "fornitore": fornitore,
+                    "numero_fattura": numero_fattura,
+                    "data_fattura": data_fattura,
+                    "tot_fattura": tot_fattura,
+                    "tot_iva": tot_iva,
+                    "righe": dati_visivi
+                })
+                
+                # Rendering a schermo
                 df_visivo = pd.DataFrame(dati_visivi)
                 col_order = ["Rif. Fattura", "Descrizione", "Lordo Riga (€)", "Tot. Fattura (€)", "Aliquota (%)", "Motivo"]
                 st.dataframe(df_visivo[col_order], use_container_width=True, hide_index=True)
@@ -191,7 +209,6 @@ if files:
         
         col1, col2 = st.columns(2)
         
-        # Eliminiamo la colonna "File XML" esclusivamente dalla matrice prima della conversione Excel
         df_excel = pd.DataFrame(dati_globali_excel).drop(columns=['File XML'])
         
         buffer_excel = io.BytesIO()
@@ -211,7 +228,7 @@ if files:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
-        pdf_bytes = genera_pdf(dati_globali_excel)
+        pdf_bytes = genera_pdf(dati_pdf_global)
         
         with col2:
             st.download_button(
