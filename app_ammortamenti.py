@@ -17,20 +17,19 @@ with st.sidebar:
 def fmt(v):
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def classifica_voce(desc, prezzo_lordo, aliq_soft, aliq_straord):
+def classifica_voce(desc, aliq_soft, aliq_straord):
     desc_l = desc.lower()
     
     if any(p in desc_l for p in ["porta", "copricassonetto", "infisso", "sedia", "scrivania", "pc", "computer"]):
-        aliq = 12.5
-        return "AA7 - Arredi/Beni", aliq, prezzo_lordo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
+        return "AA7 - Arredi/Beni", 12.5, "Bene fisico rilevato: capitalizzazione forzata"
     
     if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento"]):
-        return "Spese Incrementali", aliq_straord, prezzo_lordo * (aliq_straord/100), "Intervento strutturale rilevato"
+        return "Spese Incrementali", aliq_straord, "Intervento strutturale rilevato"
         
     if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione"]):
-        return "Spesa Corrente", 0.0, 0.0, "Servizio ordinario rilevato"
+        return "Spesa Corrente", 0.0, "Servizio ordinario rilevato"
         
-    return "AA3 - Generica", 15.0, prezzo_lordo * 0.15, "Ammortamento ordinario"
+    return "AA3 - Generica", 15.0, "Ammortamento ordinario"
 
 # --- FUNZIONE CREAZIONE PDF CON CALCOLO LARGHEZZA DINAMICA ---
 def genera_pdf(dati):
@@ -45,9 +44,8 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Quota", "Categoria Fiscale"]
+    headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Categoria Fiscale"]
     
-    # FASE 1: Inizializza le larghezze con l'ingombro delle intestazioni
     pdf.set_font("helvetica", style="B", size=8)
     col_widths = [pdf.get_string_width(h) + 6 for h in headers] 
     
@@ -55,7 +53,6 @@ def genera_pdf(dati):
     fattura_corrente = None
     pdf.set_font("helvetica", size=8)
     
-    # FASE 2: Estrazione dati e misurazione della larghezza massima
     for row in dati:
         forn = str(row['Fornitore'])[:50].encode('latin-1', 'replace').decode('latin-1')
         desc = str(row['Descrizione Bene/Servizio'])[:80].encode('latin-1', 'replace').decode('latin-1')
@@ -68,19 +65,16 @@ def genera_pdf(dati):
             
         lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
-        quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
         
-        riga = [forn, desc, tot_doc, lordo, aliq, quota, cat]
+        riga = [forn, desc, tot_doc, lordo, aliq, cat]
         dati_stampabili.append(riga)
         
-        # Aggiorna la larghezza se il testo supera lo spazio attuale
         for i, val in enumerate(riga):
             w = pdf.get_string_width(val) + 4 
             if w > col_widths[i]:
                 col_widths[i] = w
 
-    # FASE 3: Normalizzazione Spazi per non sbordare dal foglio A4 (max 277 mm)
     max_page_width = 277.0
     tot_width = sum(col_widths)
     
@@ -88,21 +82,19 @@ def genera_pdf(dati):
         fattore = max_page_width / tot_width
         col_widths = [w * fattore for w in col_widths]
     
-    # FASE 4: Stampa Effettiva
     pdf.set_font("helvetica", style="B", size=8)
     for i, header in enumerate(headers):
-        align_header = 'C' if i in [2, 3, 4, 5] else 'L'
+        align_header = 'C' if i in [2, 3, 4] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
     pdf.set_font("helvetica", size=8)
     for riga in dati_stampabili:
         for i, testocella in enumerate(riga):
-            # Sicurezza contro sbavature: tronca il testo solo se supera la cella normalizzata
             while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
                 testocella = testocella[:-1]
                 
-            align_cell = 'R' if i in [2, 3, 5] else ('C' if i == 4 else 'L')
+            align_cell = 'R' if i in [2, 3] else ('C' if i == 4 else 'L')
             pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
         pdf.ln()
         
@@ -150,7 +142,7 @@ if files:
                 iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
                 prezzo_lordo = prezzo_netto + iva_calcolata
                 
-                cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
+                cat, aliq, motivo = classifica_voce(desc, aliquota_soft, aliquota_straord)
                 
                 totale_da_mostrare = fmt(tot_fattura) if indice_riga == 0 else ""
                 
@@ -161,7 +153,6 @@ if files:
                     "Lordo Riga (€)": fmt(prezzo_lordo),
                     "Tot. Fattura (€)": totale_da_mostrare,
                     "Aliquota (%)": aliq, 
-                    "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
                 })
                 
@@ -177,13 +168,11 @@ if files:
                     "Valore Lordo Riga": prezzo_lordo,
                     "Totale Documento": tot_fattura,
                     "Aliquota Amm. (%)": aliq,
-                    "Quota Ammortamento": quota,
                     "Categoria Fiscale": cat,
                     "Motivazione Classificazione": motivo
                 })
             
             if dati_visivi:
-                # Modifica UI: Tabella interattiva e dinamica
                 st.dataframe(pd.DataFrame(dati_visivi), use_container_width=True, hide_index=True)
             else:
                 st.warning("Nessuna linea trovata nel file.")
@@ -203,7 +192,6 @@ if files:
         with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
             df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
             
-            # Adattamento Auto-Fit delle colonne su foglio EXCEL
             worksheet = writer.sheets['Cespiti Elaborati']
             for column_cells in worksheet.columns:
                 max_length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=10)
