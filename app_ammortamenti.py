@@ -57,10 +57,9 @@ def genera_pdf(dati):
         forn = str(row['Fornitore'])[:40].encode('latin-1', 'replace').decode('latin-1')
         desc = str(row['Descrizione Bene/Servizio'])[:60].encode('latin-1', 'replace').decode('latin-1')
         
-        # Estrazione Rif. Fattura
+        # Estrazione Rif. Fattura (per la logica di blanking)
         rif_fat = f"N. {row['Numero Fattura']} del {row['Data Fattura']}"
         
-        # Logica di Blanking
         if row['File XML'] != fattura_corrente:
             tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             rif_stampabile = rif_fat
@@ -90,7 +89,6 @@ def genera_pdf(dati):
     
     pdf.set_font("helvetica", style="B", size=8)
     for i, header in enumerate(headers):
-        # Indici: 3=Tot, 4=Lordo, 5=Aliq
         align_header = 'C' if i in [3, 4, 5] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
@@ -140,6 +138,7 @@ if files:
             for indice_riga, linea in enumerate(radice.iter('DettaglioLinee')):
                 desc = linea.findtext('Descrizione') or "Nessuna descrizione"
                 
+                # Calcolo invisibile dell'IVA per ottenere il Lordo
                 prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
                 try:
                     aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
@@ -155,26 +154,21 @@ if files:
                 rif_fattura_visivo = f"N. {numero_fattura} del {data_fattura}" if indice_riga == 0 else ""
                 
                 dati_visivi.append({
-                    "Descrizione": desc, 
-                    "Imponibile (€)": fmt(prezzo_netto),
-                    "IVA (€)": fmt(iva_calcolata),
-                    "Lordo Riga (€)": fmt(prezzo_lordo),
                     "Rif. Fattura": rif_fattura_visivo,
+                    "Descrizione": desc, 
+                    "Lordo Riga (€)": fmt(prezzo_lordo),
                     "Tot. Fattura (€)": totale_da_mostrare,
                     "Aliquota (%)": aliq, 
                     "Motivo": motivo
                 })
                 
-                # Excel mantiene i dati completi per consentire filtri e pivot
+                # Excel snellito senza Imponibile e dati IVA
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
                     "Data Fattura": data_fattura,
                     "File XML": f.name,
                     "Descrizione Bene/Servizio": desc,
-                    "Valore Netto Riga": prezzo_netto,
-                    "Aliquota IVA (%)": aliquota_iva_riga,
-                    "IVA Calcolata Riga": iva_calcolata,
                     "Valore Lordo Riga": prezzo_lordo,
                     "Totale Documento": tot_fattura,
                     "Aliquota Amm. (%)": aliq,
@@ -183,9 +177,8 @@ if files:
                 })
             
             if dati_visivi:
-                # Riordina le colonne visive a schermo per maggiore chiarezza
                 df_visivo = pd.DataFrame(dati_visivi)
-                col_order = ["Rif. Fattura", "Descrizione", "Imponibile (€)", "IVA (€)", "Lordo Riga (€)", "Tot. Fattura (€)", "Aliquota (%)", "Motivo"]
+                col_order = ["Rif. Fattura", "Descrizione", "Lordo Riga (€)", "Tot. Fattura (€)", "Aliquota (%)", "Motivo"]
                 st.dataframe(df_visivo[col_order], use_container_width=True, hide_index=True)
             else:
                 st.warning("Nessuna linea trovata nel file.")
