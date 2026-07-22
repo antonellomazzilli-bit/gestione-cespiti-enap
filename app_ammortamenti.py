@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import xml.etree.ElementTree as ET
+import io
 
 st.set_page_config(page_title="Gestione Ammortamenti En.A.P.", layout="wide")
 
@@ -15,93 +16,102 @@ def fmt(v):
     """Formatta i numeri nel formato italiano: 1.234,56"""
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def classifica_voce(desc, prezzo_lordo, aliq_soft, aliq_straord):
-    """Analizza la descrizione e determina la classificazione fiscale sul valore LORDO"""
+def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
+    """Analizza la descrizione e determina la classificazione fiscale"""
     desc_l = desc.lower()
     
-    # 1. PRIORITÀ MASSIMA: Beni fisici (Prevalgono su qualsiasi filtro lavori/servizi)
+    # 1. PRIORITÀ MASSIMA: Beni fisici
     if any(p in desc_l for p in ["porta", "copricassonetto", "infisso", "sedia", "scrivania", "pc", "computer"]):
         aliq = 12.5
-        return "AA7 - Arredi/Beni", aliq, prezzo_lordo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
+        return "AA7 - Arredi/Beni", aliq, prezzo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
     
     # 2. Straordinaria
     if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento"]):
-        return "Spese Incrementali", aliq_straord, prezzo_lordo * (aliq_straord/100), "Intervento strutturale rilevato"
+        return "Spese Incrementali", aliq_straord, prezzo * (aliq_straord/100), "Intervento strutturale rilevato"
         
     # 3. Servizi ordinari (Scudo)
     if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione"]):
         return "Spesa Corrente", 0.0, 0.0, "Servizio ordinario rilevato"
         
     # 4. Default
-    return "AA3 - Generica", 15.0, prezzo_lordo * 0.15, "Ammortamento ordinario"
+    return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
 
 st.title("Classificatore Fatture XML")
 files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
+    dati_globali_excel = []  # Contenitore cumulativo per l'esportazione finale
+    
     for f in files:
         try:
             radice = ET.parse(f).getroot()
             
-            # --- ESTRAZIONE INTESTAZIONE E DATI FATTURA ---
-            fornitore = radice.findtext('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione') or "Non specificato"
-            numero_fattura = radice.findtext('.//DatiGeneraliDocumento/Numero') or "N/D"
-            
-            # Estrazione e formattazione Data (da YYYY-MM-DD a DD/MM/YYYY)
-            data_raw = radice.findtext('.//DatiGeneraliDocumento/Data') or "N/D"
-            if data_raw != "N/D" and len(data_raw) >= 10:
-                data_fattura = f"{data_raw[8:10]}/{data_raw[5:7]}/{data_raw[0:4]}"
-            else:
-                data_fattura = data_raw
+            # --- ESTRAZIONE INTESTAZIONE ---
+            try: fornitore = radice.find('.//CedentePrestatore/DatiAnagrafici/Anagrafica/Denominazione').text
+            except: fornitore = "Non specificato"
                 
-            try:
-                tot_fattura = float(radice.findtext('.//DatiGeneraliDocumento/ImportoTotaleDocumento') or 0.0)
-            except:
-                tot_fattura = 0.0
+            try: tot_fattura = float(radice.find('.//DatiGeneraliDocumento/ImportoTotaleDocumento').text)
+            except: tot_fattura = 0.0
                 
-            tot_iva = sum([float(i.findtext('Imposta') or 0.0) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
+            tot_iva = sum([float(i.find('Imposta').text) for i in radice.iter('DatiRiepilogo') if i.find('Imposta') is not None])
             
-            # --- VISUALIZZAZIONE INTESTAZIONE PERSONALIZZATA ---
-            st.subheader(f"📄 FATTURA N. {numero_fattura} del {data_fattura}")
-            st.markdown(f"""
-                <div style="font-size: 18px; color: #334155; margin-bottom: 5px;">
-                    <b>Fornitore:</b> {fornitore}
-                </div>
-                <div style="font-size: 24px; font-weight: bold; color: #1e3a8a; margin-bottom: 20px;">
-                    Totale Fattura: € {fmt(tot_fattura)} &nbsp;&nbsp;|&nbsp;&nbsp; Totale IVA: € {fmt(tot_iva)}
-                </div>
-            """, unsafe_allow_html=True)
+            st.subheader(f"📄 Fattura: {f.name} | Fornitore: {fornitore}")
+            st.markdown(f"**Totale Fattura:** € {fmt(tot_fattura)} | **Totale IVA:** € {fmt(tot_iva)}")
             
             # --- ANALISI RIGHE ---
-            dati = []
+            dati_visivi = []
             for linea in radice.iter('DettaglioLinee'):
-                desc = linea.findtext('Descrizione') or ""
+                desc = linea.findtext('Descrizione')
+                prezzo = float(linea.findtext('PrezzoTotale') or 0)
                 
-                prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
-                try:
-                    aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
-                except:
-                    aliquota_iva_riga = 0.0
+                cat, aliq, quota, motivo = classifica_voce(desc, prezzo, aliquota_soft, aliquota_straord)
                 
-                iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
-                prezzo_lordo = prezzo_netto + iva_calcolata
-                
-                cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
-                
-                dati.append({
+                # 1. Dati formattati per la visualizzazione a schermo
+                dati_visivi.append({
                     "Descrizione": desc, 
-                    "Imponibile (€)": fmt(prezzo_netto),
-                    "IVA (€)": fmt(iva_calcolata),
-                    "Imponibile + IVA (€)": fmt(prezzo_lordo),
+                    "Valore (€)": fmt(prezzo), 
                     "Aliquota (%)": aliq, 
                     "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
                 })
+                
+                # 2. Dati grezzi per l'elaborazione del file Excel
+                dati_globali_excel.append({
+                    "Fornitore": fornitore,
+                    "File XML": f.name,
+                    "Descrizione Bene/Servizio": desc,
+                    "Valore Netto": prezzo,
+                    "Aliquota (%)": aliq,
+                    "Quota Ammortamento": quota,
+                    "Categoria Fiscale": cat,
+                    "Motivazione Classificazione": motivo
+                })
             
-            if dati:
-                st.table(pd.DataFrame(dati))
+            if dati_visivi:
+                st.table(pd.DataFrame(dati_visivi))
             else:
                 st.warning("Nessuna linea trovata nel file.")
                 
         except Exception as e:
-            st.error(f"Errore nella lettura del file: {e}")
+            st.error(f"Errore nella lettura del file {f.name}: {e}")
+            
+    # --- GENERAZIONE PULSANTE EXCEL ---
+    if dati_globali_excel:
+        st.markdown("---")
+        st.subheader("📥 Esportazione Dati")
+        
+        # Converte la lista globale in un DataFrame Pandas
+        df_excel = pd.DataFrame(dati_globali_excel)
+        
+        # Scrive il DataFrame in memoria (buffer) in formato Excel
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
+        
+        # Crea il pulsante di download interattivo
+        st.download_button(
+            label="📊 Scarica Riepilogo Globale in Excel",
+            data=buffer.getvalue(),
+            file_name="Riepilogo_Ammortamenti.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
