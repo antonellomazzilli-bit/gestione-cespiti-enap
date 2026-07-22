@@ -32,7 +32,7 @@ def classifica_voce(desc, prezzo_lordo, aliq_soft, aliq_straord):
         
     return "AA3 - Generica", 15.0, prezzo_lordo * 0.15, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF ---
+# --- FUNZIONE CREAZIONE PDF CON CALCOLO LARGHEZZA DINAMICA ---
 def genera_pdf(dati):
     pdf = FPDF(orientation='L') 
     pdf.add_page()
@@ -45,43 +45,65 @@ def genera_pdf(dati):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    pdf.set_font("helvetica", style="B", size=8)
-    col_widths = [35, 65, 25, 25, 15, 25, 50]
     headers = ["Fornitore", "Descrizione Articolo", "Tot. Fattura", "Lordo Riga", "Aliq. %", "Quota", "Categoria Fiscale"]
     
+    # FASE 1: Inizializza le larghezze con l'ingombro delle intestazioni
+    pdf.set_font("helvetica", style="B", size=8)
+    col_widths = [pdf.get_string_width(h) + 6 for h in headers] 
+    
+    dati_stampabili = []
+    fattura_corrente = None
+    pdf.set_font("helvetica", size=8)
+    
+    # FASE 2: Estrazione dati e misurazione della larghezza massima
+    for row in dati:
+        forn = str(row['Fornitore'])[:50].encode('latin-1', 'replace').decode('latin-1')
+        desc = str(row['Descrizione Bene/Servizio'])[:80].encode('latin-1', 'replace').decode('latin-1')
+        
+        if row['File XML'] != fattura_corrente:
+            tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            fattura_corrente = row['File XML']
+        else:
+            tot_doc = "" 
+            
+        lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
+        quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        cat = str(row['Categoria Fiscale']).encode('latin-1', 'replace').decode('latin-1')
+        
+        riga = [forn, desc, tot_doc, lordo, aliq, quota, cat]
+        dati_stampabili.append(riga)
+        
+        # Aggiorna la larghezza se il testo supera lo spazio attuale
+        for i, val in enumerate(riga):
+            w = pdf.get_string_width(val) + 4 
+            if w > col_widths[i]:
+                col_widths[i] = w
+
+    # FASE 3: Normalizzazione Spazi per non sbordare dal foglio A4 (max 277 mm)
+    max_page_width = 277.0
+    tot_width = sum(col_widths)
+    
+    if tot_width > max_page_width:
+        fattore = max_page_width / tot_width
+        col_widths = [w * fattore for w in col_widths]
+    
+    # FASE 4: Stampa Effettiva
+    pdf.set_font("helvetica", style="B", size=8)
     for i, header in enumerate(headers):
         align_header = 'C' if i in [2, 3, 4, 5] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
     pdf.set_font("helvetica", size=8)
-    
-    # Variabile di appoggio per tracciare il cambio fattura
-    fattura_corrente = None
-    
-    for row in dati:
-        forn = str(row['Fornitore'])[:20].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:40].encode('latin-1', 'replace').decode('latin-1')
-        
-        # Logica di "Blanking": stampa il totale solo sulla prima riga di ogni fattura
-        if row['File XML'] != fattura_corrente:
-            tot_doc = f"{row['Totale Documento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            fattura_corrente = row['File XML']
-        else:
-            tot_doc = "" # Lascia vuoto per le righe successive della stessa fattura
-            
-        lordo = f"{row['Valore Lordo Riga']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
-        quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        cat = str(row['Categoria Fiscale'])[:30].encode('latin-1', 'replace').decode('latin-1')
-        
-        pdf.cell(col_widths[0], 6, forn, border=1)
-        pdf.cell(col_widths[1], 6, desc, border=1)
-        pdf.cell(col_widths[2], 6, tot_doc, border=1, align='R')
-        pdf.cell(col_widths[3], 6, lordo, border=1, align='R')
-        pdf.cell(col_widths[4], 6, aliq, border=1, align='C')
-        pdf.cell(col_widths[5], 6, quota, border=1, align='R')
-        pdf.cell(col_widths[6], 6, cat, border=1)
+    for riga in dati_stampabili:
+        for i, testocella in enumerate(riga):
+            # Sicurezza contro sbavature: tronca il testo solo se supera la cella normalizzata
+            while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
+                testocella = testocella[:-1]
+                
+            align_cell = 'R' if i in [2, 3, 5] else ('C' if i == 4 else 'L')
+            pdf.cell(col_widths[i], 6, testocella, border=1, align=align_cell)
         pdf.ln()
         
     return bytes(pdf.output())
@@ -116,7 +138,6 @@ if files:
             
             dati_visivi = []
             
-            # Utilizzo enumerate per capire quale riga stiamo processando
             for indice_riga, linea in enumerate(radice.iter('DettaglioLinee')):
                 desc = linea.findtext('Descrizione') or "Nessuna descrizione"
                 
@@ -131,7 +152,6 @@ if files:
                 
                 cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
-                # Se è la prima riga della fattura (indice 0), scrivo il totale, altrimenti lascio vuoto
                 totale_da_mostrare = fmt(tot_fattura) if indice_riga == 0 else ""
                 
                 dati_visivi.append({
@@ -145,7 +165,6 @@ if files:
                     "Motivo": motivo
                 })
                 
-                # Nel file Excel esporto sempre il dato numerico puro per non corrompere i filtri
                 dati_globali_excel.append({
                     "Fornitore": fornitore,
                     "Numero Fattura": numero_fattura,
@@ -164,7 +183,8 @@ if files:
                 })
             
             if dati_visivi:
-                st.table(pd.DataFrame(dati_visivi))
+                # Modifica UI: Tabella interattiva e dinamica
+                st.dataframe(pd.DataFrame(dati_visivi), use_container_width=True, hide_index=True)
             else:
                 st.warning("Nessuna linea trovata nel file.")
                 
@@ -182,6 +202,12 @@ if files:
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
             df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
+            
+            # Adattamento Auto-Fit delle colonne su foglio EXCEL
+            worksheet = writer.sheets['Cespiti Elaborati']
+            for column_cells in worksheet.columns:
+                max_length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=10)
+                worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 80)
             
         with col1:
             st.download_button(
