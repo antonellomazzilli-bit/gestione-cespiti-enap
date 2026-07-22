@@ -17,58 +17,49 @@ with st.sidebar:
 def fmt(v):
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def classifica_voce(desc, prezzo, aliq_soft, aliq_straord):
+def classifica_voce(desc, prezzo_lordo, aliq_soft, aliq_straord):
     desc_l = desc.lower()
     
-    # 1. PRIORITÀ MASSIMA: Beni fisici
     if any(p in desc_l for p in ["porta", "copricassonetto", "infisso", "sedia", "scrivania", "pc", "computer"]):
         aliq = 12.5
-        return "AA7 - Arredi/Beni", aliq, prezzo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
+        return "AA7 - Arredi/Beni", aliq, prezzo_lordo * (aliq/100), "Bene fisico rilevato: capitalizzazione forzata"
     
-    # 2. Straordinaria
     if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento"]):
-        return "Spese Incrementali", aliq_straord, prezzo * (aliq_straord/100), "Intervento strutturale rilevato"
+        return "Spese Incrementali", aliq_straord, prezzo_lordo * (aliq_straord/100), "Intervento strutturale rilevato"
         
-    # 3. Servizi ordinari (Scudo)
     if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione"]):
         return "Spesa Corrente", 0.0, 0.0, "Servizio ordinario rilevato"
         
-    # 4. Default
-    return "AA3 - Generica", 15.0, prezzo * 0.15, "Ammortamento ordinario"
+    return "AA3 - Generica", 15.0, prezzo_lordo * 0.15, "Ammortamento ordinario"
 
-# --- FUNZIONE CREAZIONE PDF CON ALIQUOTA ---
+# --- FUNZIONE CREAZIONE PDF ---
 def genera_pdf(dati):
-    pdf = FPDF(orientation='L') # Impaginazione orizzontale
+    pdf = FPDF(orientation='L') 
     pdf.add_page()
     
-    # Intestazione con Data e Ora
     data_ora = datetime.now().strftime("%d/%m/%Y alle %H:%M")
     pdf.set_font("helvetica", style="I", size=8)
     pdf.cell(0, 5, f"Documento generato il {data_ora}", align="R", new_x="LMARGIN", new_y="NEXT")
     
-    # Titolo
     pdf.set_font("helvetica", style="B", size=14)
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Intestazioni Tabella (Spazio totale distribuito: 275)
     pdf.set_font("helvetica", style="B", size=9)
-    col_widths = [45, 90, 25, 20, 25, 70]
-    headers = ["Fornitore", "Descrizione Articolo", "Lordo (EUR)", "Aliq. %", "Quota (EUR)", "Categoria Fiscale"]
+    col_widths = [45, 85, 25, 20, 25, 70]
+    headers = ["Fornitore", "Descrizione Articolo", "Lordo", "Aliq. %", "Quota", "Categoria Fiscale"]
     
     for i, header in enumerate(headers):
         align_header = 'C' if i in [2, 3, 4] else 'L'
         pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
     pdf.ln()
     
-    # Inserimento Dati
     pdf.set_font("helvetica", size=8)
     for row in dati:
-        # Pulizia e troncamento per evitare sforamenti
         forn = str(row['Fornitore'])[:25].encode('latin-1', 'replace').decode('latin-1')
-        desc = str(row['Descrizione Bene/Servizio'])[:55].encode('latin-1', 'replace').decode('latin-1')
-        lordo = f"{row['Valore Netto']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        aliq = f"{row['Aliquota (%)']:.1f}%"
+        desc = str(row['Descrizione Bene/Servizio'])[:50].encode('latin-1', 'replace').decode('latin-1')
+        lordo = f"{row['Valore Lordo (Costo)']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        aliq = f"{row['Aliquota Amm. (%)']:.1f}%"
         quota = f"{row['Quota Ammortamento']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         cat = str(row['Categoria Fiscale'])[:40].encode('latin-1', 'replace').decode('latin-1')
         
@@ -106,13 +97,23 @@ if files:
             dati_visivi = []
             for linea in radice.iter('DettaglioLinee'):
                 desc = linea.findtext('Descrizione') or "Nessuna descrizione"
-                prezzo = float(linea.findtext('PrezzoTotale') or 0)
                 
-                cat, aliq, quota, motivo = classifica_voce(desc, prezzo, aliquota_soft, aliquota_straord)
+                prezzo_netto = float(linea.findtext('PrezzoTotale') or 0)
+                try:
+                    aliquota_iva_riga = float(linea.findtext('AliquotaIVA') or 0)
+                except:
+                    aliquota_iva_riga = 0.0
+                
+                iva_calcolata = prezzo_netto * (aliquota_iva_riga / 100.0)
+                prezzo_lordo = prezzo_netto + iva_calcolata
+                
+                cat, aliq, quota, motivo = classifica_voce(desc, prezzo_lordo, aliquota_soft, aliquota_straord)
                 
                 dati_visivi.append({
                     "Descrizione": desc, 
-                    "Valore (€)": fmt(prezzo), 
+                    "Imponibile (€)": fmt(prezzo_netto),
+                    "IVA (€)": fmt(iva_calcolata),
+                    "Lordo (€)": fmt(prezzo_lordo), 
                     "Aliquota (%)": aliq, 
                     "Quota Amm. (€)": fmt(quota), 
                     "Motivo": motivo
@@ -122,8 +123,11 @@ if files:
                     "Fornitore": fornitore,
                     "File XML": f.name,
                     "Descrizione Bene/Servizio": desc,
-                    "Valore Netto": prezzo,
-                    "Aliquota (%)": aliq,
+                    "Valore Netto": prezzo_netto,
+                    "Aliquota IVA (%)": aliquota_iva_riga,
+                    "IVA Calcolata": iva_calcolata,
+                    "Valore Lordo (Costo)": prezzo_lordo,
+                    "Aliquota Amm. (%)": aliq,
                     "Quota Ammortamento": quota,
                     "Categoria Fiscale": cat,
                     "Motivazione Classificazione": motivo
@@ -144,7 +148,6 @@ if files:
         
         col1, col2 = st.columns(2)
         
-        # 1. Pulsante EXCEL
         df_excel = pd.DataFrame(dati_globali_excel)
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
@@ -158,7 +161,6 @@ if files:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
-        # 2. Pulsante PDF
         pdf_bytes = genera_pdf(dati_globali_excel)
         
         with col2:
