@@ -11,7 +11,7 @@ st.set_page_config(page_title="Gestione Ammortamenti En.A.P.", layout="wide")
 with st.sidebar:
     st.header("⚙️ Impostazioni Fiscali")
     aliquota_soft = st.number_input("Aliquota Software (%)", min_value=0.0, max_value=100.0, value=50.0, step=0.1)
-    aliquota_straord = st.number_input("Aliquota Lavori Straordinari (%)", min_value=0.0, max_value=100.0, value=20.0, step=0.1)
+    aliquota_straord = st.number_input("Aliquota Lavori Straord./Oneri (%)", min_value=0.0, max_value=100.0, value=20.0, step=0.1)
 
 # --- FUNZIONI DI FORMATTAZIONE E LOGICA ---
 def fmt(v):
@@ -20,16 +20,32 @@ def fmt(v):
 def classifica_voce(desc, aliq_soft, aliq_straord):
     desc_l = desc.lower()
     
-    if any(p in desc_l for p in ["porta", "copricassonetto", "infisso", "sedia", "scrivania", "pc", "computer"]):
-        return "AA7 - Arredi/Beni", 12.5, "Bene fisico rilevato: capitalizzazione forzata"
+    # 1. SOFTWARE (50.0%)
+    if any(p in desc_l for p in ["software", "licenza", "windows", "office", "antivirus"]):
+        return "42 - Software", aliq_soft, "Licenze e Applicativi"
     
-    if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento"]):
-        return "Spese Incrementali", aliq_straord, "Intervento strutturale rilevato"
+    # 2. HARDWARE E MACCHINE D'UFFICIO (33.33%)
+    if any(p in desc_l for p in ["pc", "computer", "notebook", "server", "monitor", "stampante", "multifunzione", "lavagna", "proiettore", "nas", "router", "switch", "ups"]):
+        return "41 - Hardware", 33.33, "Attrezzatura informatica"
         
-    if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione"]):
+    # 3. IMPIANTI GENERICI (16.66%)
+    if any(p in desc_l for p in ["condizionatore", "climatizzatore", "caldaia", "antifurto", "impianto", "allarme"]):
+        return "44 - Impianti Generici", 16.66, "Impiantistica"
+    
+    # 4. MOBILI E ARREDI (12.50%)
+    if any(p in desc_l for p in ["porta", "infisso", "sedia", "scrivania", "armadio", "banco", "poltrona", "tavolo", "divano"]):
+        return "43 - Mobili", 12.50, "Mobilio e Arredi"
+    
+    # 5. ONERI PLURIENNALI / STRAORDINARIA (20.0%)
+    if any(p in desc_l for p in ["straordinaria", "ristrutturazione", "adeguamento", "allestimento"]):
+        return "34 - Altri oneri pluriennali", aliq_straord, "Intervento strutturale/Allestimento"
+        
+    # 6. SPESA CORRENTE (Nessun ammortamento)
+    if any(p in desc_l for p in ["pulizia", "canone", "pitturazione", "lavori", "manodopera", "manutenzione ordinaria", "riparazione"]):
         return "Spesa Corrente", 0.0, "Servizio ordinario rilevato"
         
-    return "AA3 - Generica", 15.0, "Ammortamento ordinario"
+    # 7. DEFAULT - MACCHINARI E ATTREZZATURE VARIE (15.0%)
+    return "05 - Macchinari/Attrezzature", 15.0, "Ammortamento generico"
 
 # --- FUNZIONE CREAZIONE PDF CON CONTROLLO IMPAGINAZIONE ---
 def genera_pdf(lista_fatture):
@@ -47,20 +63,13 @@ def genera_pdf(lista_fatture):
     headers = ["Rif. Fattura", "Descrizione", "Lordo Riga", "Tot. Fattura", "Aliq. %", "Motivo"]
     
     for fattura in lista_fatture:
-        # LOGICA ANTI-TAGLIO (PREDIZIONE ALTEZZA)
-        # 14mm (Titoli) + 8mm (Header) + 5mm (Spazio Finale) = 27mm fissi + 6mm per ogni riga
         altezza_blocco = 27 + (len(fattura['righe']) * 6)
-        # 210mm è l'altezza di un A4 orizzontale, tolto il margine di 15mm inferiore
         spazio_rimanente = 210 - 15 - pdf.get_y()
         
-        # Se la tabella non entra nello spazio rimanente...
         if altezza_blocco > spazio_rimanente:
-            # ...e se entra comodamente in una pagina nuova (<= 180mm), oppure se lo spazio
-            # attuale è talmente poco (es. < 40mm) da non farci entrare nemmeno le intestazioni
             if altezza_blocco <= 180 or spazio_rimanente < 40:
                 pdf.add_page()
                 
-        # Intestazione specifica della fattura
         pdf.set_font("helvetica", style="B", size=10)
         titolo = f"FATTURA N. {fattura['numero_fattura']} del {fattura['data_fattura']} | Fornitore: {fattura['fornitore']}"
         pdf.cell(0, 6, titolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
@@ -79,7 +88,7 @@ def genera_pdf(lista_fatture):
                 str(riga['Descrizione'])[:60].encode('latin-1', 'replace').decode('latin-1'),
                 str(riga['Lordo Riga (€)']).replace("€", "EUR"),
                 str(riga['Tot. Fattura (€)']).replace("€", "EUR"),
-                f"{riga['Aliquota (%)']:.1f}%",
+                str(riga['Aliquota (%)']),
                 str(riga['Motivo']).encode('latin-1', 'replace').decode('latin-1')
             ]
             for i, val in enumerate(valori):
@@ -106,7 +115,7 @@ def genera_pdf(lista_fatture):
                 str(riga['Descrizione'])[:60].encode('latin-1', 'replace').decode('latin-1'),
                 str(riga['Lordo Riga (€)']).replace("€", "EUR"),
                 str(riga['Tot. Fattura (€)']).replace("€", "EUR"),
-                f"{riga['Aliquota (%)']:.1f}%",
+                str(riga['Aliquota (%)']),
                 str(riga['Motivo']).encode('latin-1', 'replace').decode('latin-1')
             ]
             for i, testocella in enumerate(valori):
@@ -168,12 +177,14 @@ if files:
                 totale_da_mostrare = fmt(tot_fattura) if indice_riga == 0 else ""
                 rif_fattura_visivo = f"N. {numero_fattura} del {data_fattura}" if indice_riga == 0 else ""
                 
+                aliq_formattata = f"{aliq:.2f}%" if aliq > 0 else "0.0%"
+                
                 dati_visivi.append({
                     "Rif. Fattura": rif_fattura_visivo,
                     "Descrizione": desc, 
                     "Lordo Riga (€)": fmt(prezzo_lordo),
                     "Tot. Fattura (€)": totale_da_mostrare,
-                    "Aliquota (%)": aliq, 
+                    "Aliquota (%)": aliq_formattata, 
                     "Motivo": motivo
                 })
                 
