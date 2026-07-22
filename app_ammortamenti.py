@@ -44,11 +44,10 @@ def genera_pdf(lista_fatture):
     pdf.cell(0, 10, "Riepilogo Classificazione Cespiti", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
     
-    # Intestazioni uguali a quelle a schermo
     headers = ["Rif. Fattura", "Descrizione", "Lordo Riga", "Tot. Fattura", "Aliq. %", "Motivo"]
     
     for fattura in lista_fatture:
-        # Intestazione specifica della fattura (replica del subheader a schermo)
+        # Intestazione specifica della fattura (come i subheader a schermo)
         pdf.set_font("helvetica", style="B", size=10)
         titolo = f"FATTURA N. {fattura['numero_fattura']} del {fattura['data_fattura']} | Fornitore: {fattura['fornitore']}"
         pdf.cell(0, 6, titolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
@@ -58,21 +57,21 @@ def genera_pdf(lista_fatture):
         pdf.cell(0, 6, sottotitolo.encode('latin-1', 'replace').decode('latin-1'), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
-        # Calcolo larghezze per la tabella corrente
         pdf.set_font("helvetica", style="B", size=8)
         col_widths = [pdf.get_string_width(h) + 6 for h in headers]
         
+        # FASE 1: Misurazione larghezze usando conversioni stringa assolute
         for riga in fattura['righe']:
             valori = [
-                riga['Rif. Fattura'],
-                riga['Descrizione'][:60].encode('latin-1', 'replace').decode('latin-1'),
-                riga['Lordo Riga (€)'].replace("€", "EUR"), # Sostituzione euro per il PDF
-                riga['Tot. Fattura (€)'].replace("€", "EUR"),
-                riga['Aliquota (%)'],
-                riga['Motivo'].encode('latin-1', 'replace').decode('latin-1')
+                str(riga['Rif. Fattura']),
+                str(riga['Descrizione'])[:60].encode('latin-1', 'replace').decode('latin-1'),
+                str(riga['Lordo Riga (€)']).replace("€", "EUR"),
+                str(riga['Tot. Fattura (€)']).replace("€", "EUR"),
+                f"{riga['Aliquota (%)']:.1f}%",
+                str(riga['Motivo']).encode('latin-1', 'replace').decode('latin-1')
             ]
             for i, val in enumerate(valori):
-                w = pdf.get_string_width(str(val)) + 4
+                w = pdf.get_string_width(val) + 4
                 if w > col_widths[i]:
                     col_widths[i] = w
                     
@@ -82,23 +81,23 @@ def genera_pdf(lista_fatture):
             fattore = max_page_width / tot_width
             col_widths = [w * fattore for w in col_widths]
             
-        # Stampa Intestazioni
+        # FASE 2: Stampa Intestazioni
         pdf.set_font("helvetica", style="B", size=8)
         for i, header in enumerate(headers):
             align_header = 'C' if i in [2, 3, 4] else 'L'
             pdf.cell(col_widths[i], 8, header, border=1, align=align_header)
         pdf.ln()
         
-        # Stampa Righe
+        # FASE 3: Stampa Righe con formattazione sicura per PDF
         pdf.set_font("helvetica", size=8)
         for riga in fattura['righe']:
             valori = [
-                riga['Rif. Fattura'],
-                riga['Descrizione'][:60].encode('latin-1', 'replace').decode('latin-1'),
-                riga['Lordo Riga (€)'],
-                riga['Tot. Fattura (€)'],
-                riga['Aliquota (%)'],
-                riga['Motivo'].encode('latin-1', 'replace').decode('latin-1')
+                str(riga['Rif. Fattura']),
+                str(riga['Descrizione'])[:60].encode('latin-1', 'replace').decode('latin-1'),
+                str(riga['Lordo Riga (€)']).replace("€", "EUR"),
+                str(riga['Tot. Fattura (€)']).replace("€", "EUR"),
+                f"{riga['Aliquota (%)']:.1f}%",
+                str(riga['Motivo']).encode('latin-1', 'replace').decode('latin-1')
             ]
             for i, testocella in enumerate(valori):
                 while pdf.get_string_width(testocella) > col_widths[i] - 2 and len(testocella) > 0:
@@ -116,7 +115,7 @@ files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
     dati_globali_excel = []
-    dati_pdf_global = [] # Nuova struttura dati isolata per le tabelle del PDF
+    dati_pdf_global = []
     
     for f in files:
         try:
@@ -182,7 +181,6 @@ if files:
                 })
             
             if dati_visivi:
-                # Salvataggio blocco fattura in memoria PDF
                 dati_pdf_global.append({
                     "fornitore": fornitore,
                     "numero_fattura": numero_fattura,
@@ -192,7 +190,6 @@ if files:
                     "righe": dati_visivi
                 })
                 
-                # Rendering a schermo
                 df_visivo = pd.DataFrame(dati_visivi)
                 col_order = ["Rif. Fattura", "Descrizione", "Lordo Riga (€)", "Tot. Fattura (€)", "Aliquota (%)", "Motivo"]
                 st.dataframe(df_visivo[col_order], use_container_width=True, hide_index=True)
