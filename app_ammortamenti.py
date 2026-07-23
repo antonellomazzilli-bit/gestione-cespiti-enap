@@ -133,6 +133,9 @@ st.title("Classificatore Fatture XML")
 files = st.file_uploader("Carica XML", accept_multiple_files=True)
 
 if files:
+    # --- CREAZIONE CONTENITORE VUOTO IN CIMA ---
+    contenitore_pulsanti = st.container()
+    
     dati_globali_excel = []
     dati_pdf_global = []
     
@@ -220,38 +223,40 @@ if files:
         except Exception as e:
             st.error(f"Errore nella lettura del file {f.name}: {e}")
             
-    # --- GENERAZIONE PULSANTI DOWNLOAD ---
+    # --- RIEMPIMENTO DEL CONTENITORE IN CIMA ALLA FINE DEL CALCOLO ---
     if dati_globali_excel:
-        st.markdown("---")
-        st.subheader("📥 Esportazione Dati")
-        
-        col1, col2 = st.columns(2)
-        
-        df_excel = pd.DataFrame(dati_globali_excel).drop(columns=['File XML'])
-        
-        buffer_excel = io.BytesIO()
-        with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
-            df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
+        with contenitore_pulsanti:
+            st.subheader("📥 Esportazione Dati")
             
-            worksheet = writer.sheets['Cespiti Elaborati']
-            for column_cells in worksheet.columns:
-                max_length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=10)
-                worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 80)
+            col1, col2 = st.columns(2)
             
-        with col1:
-            st.download_button(
-                label="📊 Scarica Riepilogo in Excel",
-                data=buffer_excel.getvalue(),
-                file_name="Riepilogo_Ammortamenti.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            df_excel = pd.DataFrame(dati_globali_excel).drop(columns=['File XML'])
             
-        pdf_bytes = genera_pdf(dati_pdf_global)
-        
-        with col2:
-            st.download_button(
-                label="📄 Scarica Riepilogo in PDF",
-                data=pdf_bytes,
-                file_name="Riepilogo_Ammortamenti.pdf",
-                mime="application/pdf"
-            )
+            buffer_excel = io.BytesIO()
+            with pd.ExcelWriter(buffer_excel, engine='openpyxl') as writer:
+                df_excel.to_excel(writer, index=False, sheet_name='Cespiti Elaborati')
+                
+                worksheet = writer.sheets['Cespiti Elaborati']
+                for column_cells in worksheet.columns:
+                    max_length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=10)
+                    worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 80)
+                
+            with col1:
+                st.download_button(
+                    label="📊 Scarica Riepilogo in Excel",
+                    data=buffer_excel.getvalue(),
+                    file_name="Riepilogo_Ammortamenti.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+            pdf_bytes = genera_pdf(dati_pdf_global)
+            
+            with col2:
+                st.download_button(
+                    label="📄 Scarica Riepilogo in PDF",
+                    data=pdf_bytes,
+                    file_name="Riepilogo_Ammortamenti.pdf",
+                    mime="application/pdf"
+                )
+            
+            st.markdown("---")
